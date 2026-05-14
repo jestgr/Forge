@@ -307,7 +307,8 @@ export default function App() {
               ...session,
               googleFitSessionId: m.id,
               calories: m.calories,
-              avgHeartRate: m.avgHeartRate
+              avgHeartRate: m.avgHeartRate,
+              distance: m.distance
             };
           }
           return session;
@@ -341,6 +342,7 @@ export default function App() {
       exercises: [], 
       calories: workout.calories,
       avgHeartRate: workout.avgHeartRate,
+      distance: workout.distance,
       googleFitSessionId: workout.id,
       estimatedDuration: Math.round((workout.endTime - workout.startTime) / 60000)
     };
@@ -910,7 +912,17 @@ export default function App() {
     let sumHeartRate = 0;
     let totalCardioTime = 0;
     const weeklyDistance = weeklySessions.reduce((acc, s) => {
-      return acc + s.exercises.reduce((exAcc, ex) => {
+      let sessionDistance = s.distance || 0;
+      let sessionTime = s.endTime ? (s.endTime - s.startTime) / 1000 : 0;
+      
+      // If we have session level metrics (GF)
+      if (s.avgHeartRate) {
+        sumHeartRate += s.avgHeartRate;
+        totalCardioSets++;
+      }
+
+      // Aggregate from sets if present
+      const setsDistance = s.exercises.reduce((exAcc, ex) => {
         return exAcc + ex.sets.reduce((setAcc, set) => {
           if (set.heartRate) {
             sumHeartRate += set.heartRate;
@@ -920,13 +932,23 @@ export default function App() {
           return setAcc + (set.distance || 0);
         }, 0);
       }, 0);
+
+      if (setsDistance > 0) {
+        return acc + setsDistance;
+      } else {
+        totalCardioTime += sessionTime;
+        return acc + sessionDistance;
+      }
     }, 0);
 
     const avgHeartRate = totalCardioSets > 0 ? Math.round(sumHeartRate / totalCardioSets) : 0;
     const avgSpeed = totalCardioTime > 0 ? (weeklyDistance / (totalCardioTime / 3600)) : 0;
     const efficiencyRatio = (avgHeartRate > 0 && avgSpeed > 0) ? (avgSpeed / avgHeartRate * 100).toFixed(2) : '0.00';
 
-    const lastCardioSession = history.find(s => s.exercises.some(e => e.templateId === 'card_v1' || e.templateId === 'card_v2' || e.templateId === 'card_v3'));
+    const lastCardioSession = history.find(s => 
+      s.type === 'Pure Cardio' || 
+      s.exercises.some(e => e.templateId === 'card_v1' || e.templateId === 'card_v2' || e.templateId === 'card_v3')
+    );
     const daysSinceCardio = lastCardioSession ? Math.floor((Date.now() - lastCardioSession.startTime) / (1000 * 60 * 60 * 24)) : 99;
     const shouldSuggestVO2 = daysSinceCardio > 4;
 

@@ -173,7 +173,8 @@ app.get("/api/fit/sync", async (req, res) => {
         data: {
           aggregateBy: [
             { dataTypeName: "com.google.heart_rate.bpm" },
-            { dataTypeName: "com.google.calories.expended" }
+            { dataTypeName: "com.google.calories.expended" },
+            { dataTypeName: "com.google.distance.delta" }
           ],
           bucketByTime: { durationMillis: sEnd - sStart },
           startTimeMillis: sStart,
@@ -183,13 +184,19 @@ app.get("/api/fit/sync", async (req, res) => {
 
       let avgHeartRate = 0;
       let totalCalories = 0;
+      let totalDistance = 0;
 
       if (statsResponse.data.bucket && statsResponse.data.bucket[0]) {
         const heartRateSet = statsResponse.data.bucket[0].dataset.find((ds: any) => ds.dataSourceId.includes("heart_rate"));
         const caloriesSet = statsResponse.data.bucket[0].dataset.find((ds: any) => ds.dataSourceId.includes("calories"));
+        const distanceSet = statsResponse.data.bucket[0].dataset.find((ds: any) => ds.dataSourceId.includes("distance"));
 
         if (heartRateSet?.point[0]) avgHeartRate = Math.round(heartRateSet.point[0].value[0].fpVal || 0);
         if (caloriesSet?.point[0]) totalCalories = Math.round(caloriesSet.point[0].value[0].fpVal || 0);
+        if (distanceSet?.point[0]) {
+          // Convert meters to miles
+          totalDistance = (distanceSet.point[0].value[0].fpVal || 0) * 0.000621371;
+        }
       }
 
       return {
@@ -199,7 +206,8 @@ app.get("/api/fit/sync", async (req, res) => {
         startTime: sStart,
         endTime: sEnd,
         avgHeartRate,
-        calories: totalCalories
+        calories: totalCalories,
+        distance: totalDistance
       };
     }));
 

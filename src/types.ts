@@ -64,6 +64,7 @@ export interface WorkoutSession {
   estimatedDuration: number; // minutes
   calories?: number;
   avgHeartRate?: number;
+  distance?: number;
   googleFitSessionId?: string;
 }
 
