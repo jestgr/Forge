@@ -206,6 +206,21 @@ export default function App() {
 
   // Timers Effect
   useEffect(() => {
+    // Check if we already have a session
+    const checkAuth = async () => {
+      try {
+        const resp = await fetch('/api/fit/sync');
+        if (resp.ok) {
+          setIsGoogleConnected(true);
+          // Auto-sync on load if connected
+          handleSyncFit();
+        }
+      } catch (err) {
+        // Silent fail - just means not connected
+      }
+    };
+    checkAuth();
+
     const handleMessage = (event: MessageEvent) => {
       if (event.data === 'OAUTH_AUTH_SUCCESS') {
         setIsGoogleConnected(true);
