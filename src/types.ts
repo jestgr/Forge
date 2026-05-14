@@ -5,8 +5,8 @@
 
 export type ExerciseCategory = 'Mobility' | 'Posture' | 'Resistance' | 'Cardio';
 export type EquipmentMode = 'Full Gym' | 'Travel' | 'Bodyweight';
-export type TrackingField = 'Weight' | 'Reps' | 'Time' | 'Speed' | 'Incline' | 'RPE';
-export type SessionType = 'Lower Body' | 'Chest/Shoulders' | 'Back/Biceps' | 'Core';
+export type TrackingField = 'Weight' | 'Reps' | 'Time' | 'Speed' | 'Incline' | 'Distance' | 'HeartRate' | 'RPE';
+export type SessionType = 'Lower Body' | 'Chest/Shoulders' | 'Back/Biceps' | 'Core' | 'Pure Cardio';
 
 export interface ExerciseTemplate {
   id: string;
@@ -19,6 +19,9 @@ export interface ExerciseTemplate {
   suggestedRest?: number; // in seconds
   equipment: EquipmentMode[];
   trackingFields: TrackingField[];
+  description?: string;
+  notes?: string;
+  videoUrl?: string;
 }
 
 export interface WorkoutSet {
@@ -28,6 +31,8 @@ export interface WorkoutSet {
   time?: number; // in seconds
   speed?: number;
   incline?: number;
+  distance?: number;
+  heartRate?: number;
   rpe?: number;
   completed: boolean;
   timestamp: number;
@@ -43,6 +48,8 @@ export interface ActiveExercise {
   targetReps?: number | string;
   targetDuration?: number;
   targetRest?: number;
+  notes?: string;
+  videoUrl?: string;
 }
 
 export interface WorkoutSession {
@@ -55,4 +62,24 @@ export interface WorkoutSession {
   exercises: ActiveExercise[];
   status: 'active' | 'completed';
   estimatedDuration: number; // minutes
+}
+
+export interface PlanSession {
+  type: SessionType | 'Custom';
+  templateIds: string[];
+  label: string;
+}
+
+export interface PlanWeek {
+  week: number;
+  focus: string;
+  sessions: PlanSession[];
+}
+
+export interface ProgressionPlan {
+  id: string;
+  name: string;
+  description: string;
+  durationWeeks: number;
+  weeks: PlanWeek[];
 }

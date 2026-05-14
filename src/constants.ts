@@ -3,7 +3,38 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ExerciseTemplate } from './types';
+import { ExerciseTemplate, ProgressionPlan } from './types';
+
+export const PROGRESSION_PLANS: ProgressionPlan[] = [
+  {
+    id: 'vo2_max_12w',
+    name: '12-Week VO2 Max Engine',
+    description: 'A scientifically structured progression from aerobic base to elite interval capacity.',
+    durationWeeks: 12,
+    weeks: Array.from({ length: 12 }, (_, i) => {
+      const week = i + 1;
+      let focus = 'Aerobic Base';
+      let cardioTemplate = 'card_v3'; // Zone 2
+
+      if (week > 4 && week <= 8) {
+        focus = 'Threshold Intro';
+        cardioTemplate = 'card_v2'; // Hills
+      } else if (week > 8) {
+        focus = 'Max Consumption';
+        cardioTemplate = 'card_v1'; // 4x4
+      }
+
+      return {
+        week,
+        focus,
+        sessions: [
+          { type: 'Pure Cardio', templateIds: [cardioTemplate], label: `${focus} Focus` },
+          { type: 'Lower Body', templateIds: [cardioTemplate], label: `Combined Session` }
+        ]
+      };
+    })
+  }
+];
 
 export const BASE_EXERCISES: ExerciseTemplate[] = [
   // MOBILITY (10m total target - 4-5 exercises)
@@ -505,5 +536,35 @@ export const BASE_EXERCISES: ExerciseTemplate[] = [
     suggestedDuration: 1200, // 20 mins
     equipment: ['Full Gym'],
     trackingFields: ['Time', 'Speed']
+  },
+  {
+    id: 'card_v1',
+    name: 'VO2 Max Intervals (4x4)',
+    category: 'Cardio',
+    targetSplits: ['All', 'Pure Cardio'],
+    suggestedDuration: 1680, // 28 mins total (4x4 run, 3m recovery)
+    equipment: ['Full Gym', 'Travel', 'Bodyweight'],
+    trackingFields: ['Time', 'Speed', 'HeartRate', 'RPE'],
+    description: "4 minutes high intensity (90% Max HR), 3 minutes active recovery. Repeat 4 times."
+  },
+  {
+    id: 'card_v2',
+    name: 'Hill Repeats (HIIT)',
+    category: 'Cardio',
+    targetSplits: ['All', 'Pure Cardio'],
+    suggestedDuration: 1200, // 20 mins
+    equipment: ['Full Gym', 'Travel'],
+    trackingFields: ['Time', 'Incline', 'Speed', 'HeartRate'],
+    description: "60s sprint on incline, 90s walk recovery. Builds industrial lung capacity."
+  },
+  {
+    id: 'card_v3',
+    name: 'Zone 2 Base Engine',
+    category: 'Cardio',
+    targetSplits: ['All', 'Pure Cardio'],
+    suggestedDuration: 2700, // 45 mins
+    equipment: ['Full Gym', 'Travel', 'Bodyweight'],
+    trackingFields: ['Time', 'Distance', 'HeartRate', 'RPE'],
+    description: "Steady state effort at 60-70% Max HR. Foundation for VO2 Max."
   }
 ];

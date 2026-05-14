@@ -1,4 +1,5 @@
 {
+  "id": "forge-workout-builder-v1",
   "name": "Forge: AI Workout Builder",
   "short_name": "FORGE",
   "start_url": "/?pwa=true",

@@ -47,16 +47,16 @@ import {
   Zap as ZapIcon,
   Flame as FlameIcon,
   Sparkles,
-  Search,
   MessageSquare,
   TrendingDown,
   Download,
   Upload,
-  Database
+  Database,
+  Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI, Type } from "@google/genai";
-import { BASE_EXERCISES } from './constants';
+import { BASE_EXERCISES, PROGRESSION_PLANS } from './constants';
 import { 
   WorkoutSession, 
   ExerciseTemplate, 
@@ -65,7 +65,8 @@ import {
   EquipmentMode, 
   ExerciseCategory,
   TrackingField,
-  SessionType
+  SessionType,
+  ProgressionPlan
 } from './types';
 
 // Storage keys
@@ -76,10 +77,11 @@ const SESSION_TYPES = [
   'Lower Body',
   'Chest/Shoulders',
   'Back/Biceps',
-  'Core'
+  'Core',
+  'Pure Cardio'
 ] as const;
 
-const TRACKING_FIELDS: TrackingField[] = ['Weight', 'Reps', 'Time', 'Speed', 'Incline', 'RPE'];
+const TRACKING_FIELDS: TrackingField[] = ['Weight', 'Reps', 'Time', 'Speed', 'Incline', 'Distance', 'HeartRate', 'RPE'];
 
 const isMobile = () => typeof window !== 'undefined' && window.innerWidth < 768;
 
@@ -87,6 +89,8 @@ export default function App() {
   // Global State
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [equipmentMode, setEquipmentMode] = useState<EquipmentMode>('Full Gym');
+  const [activePlanId, setActivePlanId] = useState<string | null>(null);
+  const [planStartDate, setPlanStartDate] = useState<number | null>(null);
   const [customExercises, setCustomExercises] = useState<ExerciseTemplate[]>([]);
   const [history, setHistory] = useState<WorkoutSession[]>([]);
   
@@ -100,7 +104,7 @@ export default function App() {
   const [swappingExId, setSwappingExId] = useState<string | null>(null);
   const [addingToCategory, setAddingToCategory] = useState<ExerciseCategory | null>(null);
   const [expandedHistoryExId, setExpandedHistoryExId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'Dashboard' | 'Calendar'>('Dashboard');
+  const [currentView, setCurrentView] = useState<'Dashboard' | 'Calendar' | 'Plans'>('Dashboard');
   const [viewingPastSession, setViewingPastSession] = useState<WorkoutSession | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [aiAdvice, setAiAdvice] = useState<{ [exId: string]: string }>({});
@@ -112,6 +116,36 @@ export default function App() {
   const [isResting, setIsResting] = useState(false);
   const [timerRunning, setTimerRunning] = useState(false);
 
+  // Interval Training State
+  const [intervalMode, setIntervalMode] = useState<'none' | '4x4' | 'fallback'>('none');
+  const [intervalSegment, setIntervalSegment] = useState(0); // 0-indexed
+  const [intervalTimeLeft, setIntervalTimeLeft] = useState(0);
+  const [showRepeatDialog, setShowRepeatDialog] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Fallback Workout Config
+  const FALLBACK_MOVEMENTS = [
+    { name: 'Squats', duration: 45 },
+    { name: 'Push-ups', duration: 45 },
+    { name: 'Bodyweight Rows', duration: 45 },
+    { name: 'Hinges (Deadlift Movement)', duration: 45 },
+    { name: 'Carry (Loaded Walk)', duration: 45 },
+    { name: 'Plank', duration: 45 }
+  ];
+
+  // 4x4 VO2 Max Config
+  const VO2_MAX_SEGMENTS = [
+    { name: 'Warmup', duration: 180, type: 'rest' },
+    { name: 'Near-Max Effort (1/4)', duration: 240, type: 'work' },
+    { name: 'Active Rest', duration: 180, type: 'rest' },
+    { name: 'Near-Max Effort (2/4)', duration: 240, type: 'work' },
+    { name: 'Active Rest', duration: 180, type: 'rest' },
+    { name: 'Near-Max Effort (3/4)', duration: 240, type: 'work' },
+    { name: 'Active Rest', duration: 180, type: 'rest' },
+    { name: 'Near-Max Effort (4/4)', duration: 240, type: 'work' },
+    { name: 'Cool Down', duration: 180, type: 'rest' }
+  ];
+
   // Logging Form State
   const [loggingExId, setLoggingExId] = useState<string | null>(null);
   const [logFormData, setLogFormData] = useState<Partial<WorkoutSet>>({});
@@ -121,6 +155,13 @@ export default function App() {
   const [newExCategory, setNewExCategory] = useState<ExerciseCategory>('Resistance');
   const [newExFields, setNewExFields] = useState<TrackingField[]>(['Weight', 'Reps']);
   const [newExSplits, setNewExSplits] = useState<SessionType[]>([]);
+  const [newExNotes, setNewExNotes] = useState('');
+  const [newExVideoUrl, setNewExVideoUrl] = useState('');
+  
+  // Daily Steps Tracking
+  const [dailySteps, setDailySteps] = useState<{ [dateKey: string]: number }>({});
+  const [showStepLogger, setShowStepLogger] = useState(false);
+  const [stepInput, setStepInput] = useState('');
   
   // Load State
   useEffect(() => {
@@ -130,6 +171,9 @@ export default function App() {
         const parsed = JSON.parse(saved);
         setCustomExercises(parsed.customExercises || []);
         setHistory(parsed.history || []);
+        setDailySteps(parsed.dailySteps || {});
+        setActivePlanId(parsed.activePlanId || null);
+        setPlanStartDate(parsed.planStartDate || null);
         if (parsed.activeSession) {
           setSession(parsed.activeSession);
           setTimerRunning(true);
@@ -147,10 +191,13 @@ export default function App() {
     const state = {
       activeSession: session,
       customExercises,
-      history
+      history,
+      dailySteps,
+      activePlanId,
+      planStartDate
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [session, customExercises, history]);
+  }, [session, customExercises, history, dailySteps, activePlanId, planStartDate]);
 
   // Timers Effect
   useEffect(() => {
@@ -158,17 +205,117 @@ export default function App() {
     if (timerRunning) {
       interval = setInterval(() => {
         setTotalSeconds(prev => prev + 1);
-        if (isResting) setRestSeconds(prev => prev + 1);
+        
+        if (intervalMode !== 'none') {
+          setIntervalTimeLeft(prev => {
+            if (prev <= 1) {
+              // Time's up for current segment
+              handleNextIntervalSegment();
+              return 0;
+            }
+            return prev - 1;
+          });
+        } else {
+          if (isResting) setRestSeconds(prev => prev + 1);
+        }
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [timerRunning, isResting]);
+  }, [timerRunning, isResting, intervalMode, intervalSegment]);
+
+  const handleNextIntervalSegment = () => {
+    if (intervalMode === 'fallback') {
+      const isCurrentlyWork = intervalTimeLeft === 0 || intervalTimeLeft > 0; // Simplified for finding next
+      // Sequence: Work (45s) -> Transition (15s) -> Work ...
+      // In fallback, we have 6 segments. Each segment has 45s work + 15s rest.
+      // So 12 sub-segments: Work, Rest, Work, Rest ...
+      
+      const newSegment = intervalSegment + 1;
+      if (newSegment >= 12) {
+        // Workout finished
+        setTimerRunning(false);
+        setShowRepeatDialog(true);
+        return;
+      }
+      
+      const isRest = newSegment % 2 !== 0;
+      setIntervalSegment(newSegment);
+      setIntervalTimeLeft(isRest ? 15 : 45);
+    } else if (intervalMode === '4x4') {
+      const newSegment = intervalSegment + 1;
+      if (newSegment >= VO2_MAX_SEGMENTS.length) {
+        // Session complete
+        setTimerRunning(false);
+        setIntervalMode('none');
+        return;
+      }
+      setIntervalSegment(newSegment);
+      setIntervalTimeLeft(VO2_MAX_SEGMENTS[newSegment].duration);
+    }
+  };
+
+  const start4x4Session = () => {
+    setIntervalMode('4x4');
+    setIntervalSegment(0);
+    setIntervalTimeLeft(VO2_MAX_SEGMENTS[0].duration);
+    setTimerRunning(true);
+  };
+
+  const startFallbackWorkout = () => {
+    setIntervalMode('fallback');
+    setIntervalSegment(0);
+    setIntervalTimeLeft(45); // First 45s work
+    setTotalSeconds(0);
+    setTimerRunning(true);
+    setShowBuilder(false);
+    setCurrentView('Dashboard');
+  };
 
   const allTemplates = useMemo(() => [...BASE_EXERCISES, ...customExercises], [customExercises]);
+
+  const getCurrentPlanDetails = () => {
+    if (!activePlanId || !planStartDate) return null;
+    const plan = PROGRESSION_PLANS.find(p => p.id === activePlanId);
+    if (!plan) return null;
+    
+    const diffTime = Math.abs(Date.now() - planStartDate);
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const weekIndex = Math.floor(diffDays / 7);
+    
+    if (weekIndex >= plan.durationWeeks) return null;
+    return { plan, weekIndex, weekData: plan.weeks[weekIndex] };
+  };
 
   const startNewSession = (type: SessionType, hasCardio: boolean) => {
     const candidates = allTemplates.filter(t => t.equipment.includes(equipmentMode));
     
+    // Check for Plan Override/Suggestion
+    const planDetails = getCurrentPlanDetails();
+    let planExercises: ActiveExercise[] = [];
+    
+    if (planDetails) {
+      const planSession = planDetails.weekData.sessions.find(s => s.type === type || (s.type === 'Custom' && ((type as any) === 'Pure Cardio' || (hasCardio && (type as any) !== 'Pure Cardio'))));
+      if (planSession) {
+        planExercises = planSession.templateIds.map(tid => {
+          const t = candidates.find(c => c.id === tid);
+          if (!t) return null;
+          return {
+            id: Math.random().toString(36).substr(2, 9),
+            templateId: t.id,
+            name: t.name,
+            category: t.category,
+            targetSets: t.suggestedSets || (t.category === 'Cardio' || t.category === 'Mobility' ? 1 : 3),
+            targetReps: t.suggestedReps,
+            targetDuration: t.suggestedDuration,
+            targetRest: t.suggestedRest,
+            notes: t.notes,
+            videoUrl: t.videoUrl,
+            sets: []
+          };
+        }).filter(Boolean) as ActiveExercise[];
+      }
+    }
+
     // Filter by split logic
     const splitFilter = (t: ExerciseTemplate) => {
       // If it doesn't have splits defined, default to 'All' or just allow it if it's mobility/posture/cardio
@@ -180,14 +327,38 @@ export default function App() {
     const mobility = candidates.filter(t => t.category === 'Mobility' && splitFilter(t)).slice(0, 4);
     const posture = candidates.filter(t => t.category === 'Posture' && splitFilter(t)).slice(0, 2);
     
-    // Total 1hr target: 15m (pre) + 25m (cardio) + 20m (res) OR 15m (pre) + 45m (res)
-    const resistanceCount = hasCardio ? 2 : 4; 
-    
-    const resistance = candidates.filter(t => t.category === 'Resistance' && splitFilter(t)).slice(0, resistanceCount);
+    let resistanceCount = hasCardio ? 2 : 4; 
+    let cardioCount = hasCardio ? 1 : 0;
 
-    const cardio = hasCardio 
-      ? candidates.filter(t => t.category === 'Cardio' && splitFilter(t)).slice(0, 1)
-      : [];
+    if (type === 'Pure Cardio') {
+      resistanceCount = 0;
+      cardioCount = 3;
+    }
+    
+    const resTemplates = candidates.filter(t => t.category === 'Resistance' && splitFilter(t));
+    const cardTemplates = candidates.filter(t => t.category === 'Cardio' && splitFilter(t));
+    
+    let resistance = resTemplates.slice(0, resistanceCount);
+    let cardio = cardTemplates.slice(0, cardioCount);
+
+    // Integrate plan exercises
+    if (planExercises.length > 0) {
+      const planCardio = planExercises.filter(e => e.category === 'Cardio');
+      const planResistance = planExercises.filter(e => e.category === 'Resistance');
+      
+      if (planCardio.length > 0) {
+        const planCardioTemplates = planCardio.map(pc => cardTemplates.find(ct => ct.id === pc.templateId)).filter(Boolean) as ExerciseTemplate[];
+        // Filter out those already in planCardio from cardio list to avoid duplicates
+        const otherCardio = cardio.filter(c => !planCardio.some(pc => pc.templateId === c.id));
+        cardio = [...planCardioTemplates, ...otherCardio].slice(0, Math.max(cardioCount, planCardioTemplates.length));
+      }
+      
+      if (planResistance.length > 0) {
+        const planResTemplates = planResistance.map(pr => resTemplates.find(rt => rt.id === pr.templateId)).filter(Boolean) as ExerciseTemplate[];
+        const otherRes = resistance.filter(r => !planResistance.some(pr => pr.templateId === r.id));
+        resistance = [...planResTemplates, ...otherRes].slice(0, Math.max(resistanceCount, planResTemplates.length));
+      }
+    }
 
     const exercises: ActiveExercise[] = [...mobility, ...posture, ...resistance, ...cardio].map(t => ({
       id: Math.random().toString(36).substr(2, 9),
@@ -198,6 +369,8 @@ export default function App() {
       targetReps: t.suggestedReps,
       targetDuration: t.suggestedDuration,
       targetRest: t.suggestedRest,
+      notes: t.notes,
+      videoUrl: t.videoUrl,
       sets: []
     }));
 
@@ -248,6 +421,8 @@ export default function App() {
       time: lastSet?.time ?? template?.suggestedDuration ?? 0,
       speed: lastSet?.speed ?? 0,
       incline: lastSet?.incline ?? 0,
+      distance: lastSet?.distance ?? 0,
+      heartRate: lastSet?.heartRate ?? 0,
       rpe: lastSet?.rpe ?? 7
     };
 
@@ -269,6 +444,8 @@ export default function App() {
       time: logFormData.time,
       speed: logFormData.speed,
       incline: logFormData.incline,
+      distance: logFormData.distance,
+      heartRate: logFormData.heartRate,
       rpe: logFormData.rpe,
       completed: true,
       timestamp: Date.now()
@@ -308,6 +485,8 @@ export default function App() {
           targetReps: template.suggestedReps,
           targetDuration: template.suggestedDuration,
           targetRest: template.suggestedRest,
+          notes: template.notes,
+          videoUrl: template.videoUrl,
           sets: [] // Reset sets when swapping
         };
       }
@@ -323,6 +502,8 @@ export default function App() {
         targetReps: template.suggestedReps,
         targetDuration: template.suggestedDuration,
         targetRest: template.suggestedRest,
+        notes: template.notes,
+        videoUrl: template.videoUrl,
         sets: []
       };
       newSession.exercises.push(newEx);
@@ -341,11 +522,15 @@ export default function App() {
       category: newExCategory,
       targetSplits: newExSplits.length > 0 ? newExSplits : ['All'],
       equipment: ['Full Gym', 'Travel', 'Bodyweight'], 
-      trackingFields: newExFields
+      trackingFields: newExFields,
+      notes: newExNotes,
+      videoUrl: newExVideoUrl
     };
     setCustomExercises([...customExercises, newTemplate]);
     setNewExName('');
     setNewExSplits([]);
+    setNewExNotes('');
+    setNewExVideoUrl('');
     setShowAddCustom(false);
   };
 
@@ -375,6 +560,22 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const exportLibrary = () => {
+    const data = {
+      customExercises,
+      version: '1.0',
+      type: 'library_only',
+      exportedAt: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `forge_library_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -389,10 +590,8 @@ export default function App() {
         if (json.customExercises && Array.isArray(json.customExercises)) {
           setCustomExercises(json.customExercises);
         }
-        alert('Data successfully imported and restored.');
       } catch (err) {
         console.error('Import failed', err);
-        alert('Invalid backup file. Please try again.');
       }
     };
     reader.readAsText(file);
@@ -415,11 +614,15 @@ export default function App() {
       const ex = session.exercises.find(e => e.templateId === templateId);
       if (ex) {
         ex.sets.forEach(set => {
-          const val = set.weight || set.time || 0;
+          const val = set.weight || set.time || set.distance || set.heartRate || 0;
+          const display = set.weight ? `${set.weight} lb` : 
+                          set.distance ? `${set.distance} mi` :
+                          set.heartRate ? `${set.heartRate} bpm` :
+                          formatTime(set.time || 0);
           historicalSets.push({
             value: val,
             date: set.timestamp || session.startTime,
-            display: set.weight ? `${set.weight} lb` : formatTime(set.time || 0)
+            display: display
           });
         });
       }
@@ -429,17 +632,82 @@ export default function App() {
       const ex = session.exercises.find(e => e.templateId === templateId);
       if (ex) {
         ex.sets.forEach(set => {
-          const val = set.weight || set.time || 0;
+          const val = set.weight || set.time || set.distance || set.heartRate || 0;
+          const display = set.weight ? `${set.weight} lb` : 
+                          set.distance ? `${set.distance} mi` :
+                          set.heartRate ? `${set.heartRate} bpm` :
+                          formatTime(set.time || 0);
           historicalSets.push({
             value: val,
             date: set.timestamp || Date.now(),
-            display: set.weight ? `${set.weight} lb` : formatTime(set.time || 0)
+            display: display
           });
         });
       }
     }
 
     return historicalSets.sort((a, b) => a.date - b.date).slice(-50);
+  };
+
+  const handleLogSteps = () => {
+    const steps = parseInt(stepInput);
+    if (isNaN(steps)) return;
+    const todayKey = new Date().toDateString();
+    setDailySteps({ ...dailySteps, [todayKey]: steps });
+    setShowStepLogger(false);
+  };
+
+  const calculateFourBucketProgress = () => {
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const weeklySessions = history.filter(s => s.startTime >= startOfWeek.getTime() && s.status === 'completed');
+
+    // 1. Heavy Lifts: 2 sessions, 30-45 min
+    const heavyLifts = weeklySessions.filter(s => {
+      const isLift = ['Lower Body', 'Chest/Shoulders', 'Back/Biceps'].includes(s.type);
+      const duration = s.endTime ? (s.endTime - s.startTime) / 60000 : 0;
+      return isLift && duration >= 30;
+    }).length;
+
+    // 2. Zone 2 Cardio: 2-3 sessions, 50-60 min
+    const zone2Sessions = weeklySessions.filter(s => {
+      const isCardio = s.type === 'Pure Cardio' || s.hasCardio;
+      const duration = s.endTime ? (s.endTime - s.startTime) / 60000 : 0;
+      // We assume Pure Cardio sessions > 45m are Zone 2 unless they are marked as HIIT
+      return isCardio && duration >= 45;
+    }).length;
+
+    // 3. HIIT / VO2 Max: 1 session, ~30 min
+    const hiitSessions = weeklySessions.filter(s => {
+      const isCardio = s.type === 'Pure Cardio';
+      const duration = s.endTime ? (s.endTime - s.startTime) / 60000 : 0;
+      // Assume Cardio < 40m or specific HIIT templates are HIIT
+      return isCardio && duration < 40 && duration >= 15;
+    }).length;
+
+    // 4. Daily Steps: 7k-10k
+    // Count how many days this week met the step goal
+    let stepDaysMet = 0;
+    const dayKeys = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startOfWeek);
+      d.setDate(startOfWeek.getDate() + i);
+      dayKeys.push(d.toDateString());
+    }
+    
+    dayKeys.forEach(key => {
+      if ((dailySteps[key] || 0) >= 7000) stepDaysMet++;
+    });
+
+    return {
+      heavy: { current: heavyLifts, target: 2 },
+      zone2: { current: zone2Sessions, target: 2 }, // Target 2-3, we'll use 2 as baseline
+      hiit: { current: hiitSessions, target: 1 },
+      steps: { current: stepDaysMet, target: 7 } // Daily target, but shown as days met in week
+    };
   };
 
   const calculateInsights = () => {
@@ -489,7 +757,31 @@ export default function App() {
       heatmap.push({ date: d, active: hasWorkout });
     }
 
-    return { weeklyVolume, prs, heatmap };
+    let totalCardioSets = 0;
+    let sumHeartRate = 0;
+    let totalCardioTime = 0;
+    const weeklyDistance = weeklySessions.reduce((acc, s) => {
+      return acc + s.exercises.reduce((exAcc, ex) => {
+        return exAcc + ex.sets.reduce((setAcc, set) => {
+          if (set.heartRate) {
+            sumHeartRate += set.heartRate;
+            totalCardioSets++;
+          }
+          if (set.time) totalCardioTime += set.time;
+          return setAcc + (set.distance || 0);
+        }, 0);
+      }, 0);
+    }, 0);
+
+    const avgHeartRate = totalCardioSets > 0 ? Math.round(sumHeartRate / totalCardioSets) : 0;
+    const avgSpeed = totalCardioTime > 0 ? (weeklyDistance / (totalCardioTime / 3600)) : 0;
+    const efficiencyRatio = (avgHeartRate > 0 && avgSpeed > 0) ? (avgSpeed / avgHeartRate * 100).toFixed(2) : '0.00';
+
+    const lastCardioSession = history.find(s => s.exercises.some(e => e.templateId === 'card_v1' || e.templateId === 'card_v2' || e.templateId === 'card_v3'));
+    const daysSinceCardio = lastCardioSession ? Math.floor((Date.now() - lastCardioSession.startTime) / (1000 * 60 * 60 * 24)) : 99;
+    const shouldSuggestVO2 = daysSinceCardio > 4;
+
+    return { weeklyVolume, weeklyDistance, avgHeartRate, avgSpeed, efficiencyRatio, prs, heatmap, daysSinceCardio, shouldSuggestVO2 };
   };
 
   const getAIAdvice = async (ex: ActiveExercise) => {
@@ -502,7 +794,7 @@ export default function App() {
       
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: `Analyze this exercise data for "${ex.name}" and provide 1-2 sentences of specific coaching advice (plateau detection, progression tips, or form cues). Data: [${dataStr}]. Current Goal: ${ex.targetSets} sets of ${ex.targetReps} reps. Keep it professional and concise.`,
+        contents: `Analyze this exercise data for "${ex.name}" and provide 1-2 sentences of specific coaching advice (plateau detection, progression tips, VO2 max optimization, or form cues). Data: [${dataStr}]. ${ex.targetSets ? `Goal: ${ex.targetSets} sets` : ''} ${ex.targetReps ? `of ${ex.targetReps} reps` : ''} ${ex.targetDuration ? `target ${formatTime(ex.targetDuration)}` : ''}. Keep it professional and concise.`,
       });
       
       setAiAdvice(prev => ({ ...prev, [ex.id]: response.text }));
@@ -520,6 +812,7 @@ export default function App() {
       case 'Chest/Shoulders': return 'bg-blue-500';
       case 'Back/Biceps': return 'bg-emerald-500';
       case 'Core': return 'bg-purple-500';
+      case 'Pure Cardio': return 'bg-rose-500';
       default: return 'bg-slate-500';
     }
   };
@@ -530,6 +823,7 @@ export default function App() {
       case 'Chest/Shoulders': return 'text-blue-600';
       case 'Back/Biceps': return 'text-emerald-600';
       case 'Core': return 'text-purple-600';
+      case 'Pure Cardio': return 'text-rose-600';
       default: return 'text-slate-600';
     }
   };
@@ -560,17 +854,35 @@ export default function App() {
           {s.exercises.map(ex => (
             <div key={ex.id} className="space-y-3">
               <div className="flex justify-between items-center border-b border-slate-50 pb-2">
-                <h4 className="font-bold text-slate-800 text-sm">{ex.name}</h4>
-                <p className="text-[10px] text-slate-400 font-bold uppercase">{ex.category}</p>
+                <div>
+                  <h4 className="font-bold text-slate-800 text-sm">{ex.name}</h4>
+                  {ex.notes && <p className="text-[10px] text-slate-400 italic mt-0.5">{ex.notes}</p>}
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">{ex.category}</p>
+                  {ex.videoUrl && (
+                    <a 
+                      href={ex.videoUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-[8px] font-black text-blue-600 uppercase tracking-widest hover:underline"
+                    >
+                      Coaching Video
+                    </a>
+                  )}
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {ex.sets.map((set, idx) => (
                   <div key={set.id} className="flex items-center gap-3 bg-slate-50 px-3 py-2 rounded-lg text-xs border border-slate-100">
                     <span className="font-bold text-slate-400">S{idx+1}</span>
                     <div className="flex gap-2 font-medium text-slate-700">
-                      {set.weight !== undefined && <span>{set.weight} lb</span>}
-                      {set.reps !== undefined && <span>{set.reps} reps</span>}
+                      {set.weight !== undefined && set.weight > 0 && <span>{set.weight} lb</span>}
+                      {set.reps !== undefined && set.reps > 0 && <span>{set.reps} reps</span>}
                       {set.time !== undefined && set.time > 0 && <span>{formatTime(set.time)}</span>}
+                      {set.distance !== undefined && set.distance > 0 && <span>{set.distance} mi</span>}
+                      {set.heartRate !== undefined && set.heartRate > 0 && <span>{set.heartRate} bpm</span>}
+                      {set.speed !== undefined && set.speed > 0 && <span>{set.speed} mph</span>}
                     </div>
                   </div>
                 ))}
@@ -582,6 +894,79 @@ export default function App() {
       </motion.div>
     </div>
   );
+
+  const PlansView = () => {
+    return (
+      <div className="max-w-4xl mx-auto space-y-8">
+        <div className="flex justify-between items-end">
+          <div>
+            <h2 className="text-3xl font-black text-slate-900 tracking-tight">Structured Plans</h2>
+            <p className="text-slate-500 font-medium tracking-tight">Scientifically back progressions for elite performance.</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {PROGRESSION_PLANS.map(plan => {
+            const isActive = activePlanId === plan.id;
+            const details = getCurrentPlanDetails();
+            
+            return (
+              <div key={plan.id} className={`bg-white rounded-[2rem] p-8 border-2 transition-all ${isActive ? 'border-blue-600 shadow-xl shadow-blue-50' : 'border-slate-100'}`}>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={`p-3 rounded-2xl ${isActive ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                    <Dumbbell className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-900 leading-tight">{plan.name}</h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{plan.durationWeeks} Weeks</p>
+                  </div>
+                </div>
+                <p className="text-sm text-slate-500 font-medium mb-6 leading-relaxed">{plan.description}</p>
+                
+                {isActive && details ? (
+                  <div className="bg-blue-50 rounded-2xl p-4 mb-6 border border-blue-100">
+                    <div className="flex justify-between items-center mb-2">
+                       <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Active Progress</span>
+                       <span className="text-xs font-black text-blue-700">Week {details.weekIndex + 1} of {plan.durationWeeks}</span>
+                    </div>
+                    <div className="w-full bg-blue-100 h-2 rounded-full overflow-hidden">
+                       <div className="bg-blue-600 h-full" style={{ width: `${((details.weekIndex + 1) / plan.durationWeeks) * 100}%` }}></div>
+                    </div>
+                    <p className="mt-3 text-xs font-bold text-blue-800">Current Focus: {details.weekData.focus}</p>
+                  </div>
+                ) : null}
+
+                <div className="flex gap-3">
+                  {!isActive ? (
+                    <button 
+                      onClick={() => {
+                        setActivePlanId(plan.id);
+                        setPlanStartDate(Date.now());
+                        setCurrentView('Dashboard');
+                      }}
+                      className="flex-1 bg-slate-900 text-white font-black py-4 rounded-xl text-sm transition-all hover:bg-blue-600"
+                    >
+                      Initialize Plan
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => {
+                        setActivePlanId(null);
+                        setPlanStartDate(null);
+                      }}
+                      className="flex-1 bg-slate-100 text-slate-400 font-black py-4 rounded-xl text-sm transition-all hover:bg-rose-50 hover:text-rose-600"
+                    >
+                      Terminate Plan
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   const CalendarView = () => {
     const startOfMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
@@ -720,54 +1105,109 @@ export default function App() {
         </div>
       </header>
 
-      {/* Timer Bar (Active Only) */}
+      {/* Timer Bar (Active Only) - Sticky at top of viewport for focus */}
       <AnimatePresence>
-        {session && (
+        {(session || intervalMode !== 'none') && (
           <motion.div 
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="bg-slate-900 text-white px-4 py-2 border-b border-slate-800 z-20 flex items-center justify-between"
+            className="sticky top-0 bg-slate-900 text-white px-4 py-3 border-b border-slate-800 z-[60] flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xl"
           >
-            <div className="flex items-center gap-6">
+            <div className="flex flex-wrap items-center gap-6">
               <div className="flex items-center gap-3">
                 <div className="flex flex-col">
-                  <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">Session</span>
+                  <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">Session Timer</span>
                   <span className="text-sm font-mono font-bold leading-none">{formatTime(totalSeconds)}</span>
                 </div>
                 <button 
                   onClick={() => setTimerRunning(!timerRunning)}
                   className="p-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
-                  title={timerRunning ? "Pause Session" : "Resume Session"}
+                  title={timerRunning ? "Pause" : "Resume"}
                 >
-                  {timerRunning ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                  {timerRunning ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
                 </button>
               </div>
-              
-              {isResting && (
+
+              {intervalMode === 'none' && isResting && (
                 <div className="flex items-center gap-3 pl-6 border-l border-slate-700">
                   <div className="flex flex-col">
-                    <span className="text-[8px] font-bold text-blue-400 uppercase tracking-widest leading-none mb-1">Rest Interval</span>
+                    <span className="text-[8px] font-bold text-blue-400 uppercase tracking-widest leading-none mb-1">Auto-Rest</span>
                     <span className="text-sm font-mono font-bold leading-none text-blue-400">{formatTime(restSeconds)}</span>
                   </div>
                   <button 
                     onClick={stopRest}
-                    className="p-1 px-2 bg-blue-600 rounded text-[10px] font-bold uppercase hover:bg-blue-700 transition-colors"
+                    className="p-1.5 px-3 bg-blue-600 rounded-lg text-[10px] font-bold uppercase hover:bg-blue-700 transition-colors"
                   >
-                    Done
+                    Skip
                   </button>
+                </div>
+              )}
+
+              {intervalMode === '4x4' && (
+                <div className="flex items-center gap-6 pl-6 border-l border-white/10">
+                  <div className="flex flex-col">
+                    <span className="text-[8px] font-black text-amber-500 uppercase tracking-[0.2em] mb-1">VO2 Max Block</span>
+                    <span className="text-xs font-black text-white uppercase">{VO2_MAX_SEGMENTS[intervalSegment].name}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Interval Time</span>
+                    <span className={`text-xl font-mono font-black ${VO2_MAX_SEGMENTS[intervalSegment].type === 'work' ? 'text-amber-500' : 'text-emerald-400'}`}>
+                      {formatTime(intervalTimeLeft)}
+                    </span>
+                  </div>
+                  <div className="flex gap-1">
+                    {VO2_MAX_SEGMENTS.map((_, i) => (
+                      <div key={i} className={`w-3 h-1 rounded-full ${i < intervalSegment ? 'bg-amber-500' : i === intervalSegment ? 'bg-white animate-pulse' : 'bg-slate-700'}`} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {intervalMode === 'fallback' && (
+                <div className="flex items-center gap-6 pl-6 border-l border-white/10">
+                  <div className="flex flex-col">
+                    <span className="text-[8px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-1">Fallback 6-Min Block</span>
+                    <span className="text-xs font-black text-white uppercase">
+                      {intervalSegment % 2 === 0 ? FALLBACK_MOVEMENTS[Math.floor(intervalSegment/2)].name : 'Transition'}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Time Left</span>
+                    <span className={`text-xl font-mono font-black ${intervalSegment % 2 === 0 ? 'text-indigo-400' : 'text-emerald-400'}`}>
+                      {formatTime(intervalTimeLeft)}
+                    </span>
+                  </div>
+                  <div className="text-[10px] font-black text-slate-500">
+                    MOVE {Math.floor(intervalSegment/2) + 1} / 6
+                  </div>
                 </div>
               )}
             </div>
             
             <div className="flex items-center gap-4">
-              <span className="text-[10px] font-bold text-slate-500 uppercase hidden sm:block">{session.name}</span>
-              <button 
-                onClick={finishSession}
-                className="bg-white/10 hover:bg-white/20 text-white border border-white/20 text-[10px] font-bold px-3 py-1.5 rounded uppercase transition-all"
-              >
-                Finish
-              </button>
+              {session && (
+                <>
+                   <span className="text-[10px] font-bold text-slate-500 uppercase hidden lg:block tracking-widest">{session.name}</span>
+                   <button 
+                    onClick={finishSession}
+                    className="bg-red-600 hover:bg-red-700 text-white text-[10px] font-black px-4 py-2 rounded-xl uppercase tracking-widest transition-all shadow-lg shadow-red-900/20"
+                  >
+                    Finish Session
+                  </button>
+                </>
+              )}
+              {intervalMode !== 'none' && !session && (
+                <button 
+                  onClick={() => {
+                    setIntervalMode('none');
+                    setTimerRunning(false);
+                  }}
+                  className="bg-white/10 hover:bg-white/20 text-white text-[10px] font-black px-4 py-2 rounded-xl uppercase tracking-widest transition-all"
+                >
+                  Exit Workout
+                </button>
+              )}
             </div>
           </motion.div>
         )}
@@ -801,16 +1241,32 @@ export default function App() {
           <div className="flex-1 overflow-y-auto px-4">
             <div className="flex flex-col gap-1 mb-6">
               <button 
-                onClick={() => setCurrentView('Dashboard')}
+                onClick={() => {
+                  setCurrentView('Dashboard');
+                  setSidebarOpen(false);
+                }}
                 className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${currentView === 'Dashboard' ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
               >
                 <LayoutDashboard className="w-4 h-4" /> Dashboard
               </button>
               <button 
-                onClick={() => setCurrentView('Calendar')}
+                onClick={() => {
+                  setCurrentView('Calendar');
+                  setSidebarOpen(false);
+                }}
                 className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${currentView === 'Calendar' ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
               >
                 <History className="w-4 h-4" /> Calendar
+              </button>
+
+              <button 
+                onClick={() => {
+                  setCurrentView('Plans');
+                  setSidebarOpen(false);
+                }}
+                className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${currentView === 'Plans' ? 'bg-rose-50 text-rose-600' : 'text-slate-500 hover:bg-slate-50'}`}
+              >
+                <BookOpen className="w-4 h-4" /> Training Plans
               </button>
             </div>
 
@@ -852,10 +1308,20 @@ export default function App() {
             <div className="flex gap-2 pt-2 border-t border-slate-200/50">
               <button 
                 onClick={exportData}
+                title="Full Backup (History + Exercises)"
                 className="flex-1 flex flex-col items-center justify-center p-3 rounded-xl bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-all group"
               >
                 <Download className="w-4 h-4 text-slate-400 group-hover:text-blue-600 mb-1" />
                 <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Backup</span>
+              </button>
+
+              <button 
+                onClick={exportLibrary}
+                title="Export Exercises Only (Safe to Share)"
+                className="flex-1 flex flex-col items-center justify-center p-3 rounded-xl bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-all group"
+              >
+                <Database className="w-4 h-4 text-slate-400 group-hover:text-blue-600 mb-1" />
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Library</span>
               </button>
               
               <label className="flex-1 flex flex-col items-center justify-center p-3 rounded-xl bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-all group cursor-pointer text-center">
@@ -879,6 +1345,8 @@ export default function App() {
         <div className="flex-1 overflow-y-auto bg-slate-50/30 p-4 md:p-8">
           {currentView === 'Calendar' ? (
             <CalendarView />
+          ) : currentView === 'Plans' ? (
+            <PlansView />
           ) : session ? (
             <div className="max-w-4xl mx-auto space-y-6 md:space-y-8">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
@@ -950,6 +1418,38 @@ export default function App() {
                                     <span className="text-slate-300">•</span>
                                     <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">{ex.sets.length} / {ex.targetSets} Work</p>
                                   </div>
+                                  {ex.category === 'Cardio' && intervalMode === 'none' && (
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        start4x4Session();
+                                      }}
+                                      className="mt-3 flex items-center gap-2 bg-amber-50 text-amber-600 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-100 transition-all border border-amber-100 group shadow-sm"
+                                    >
+                                      <Zap className="w-3 h-3 fill-current group-hover:scale-125 transition-transform" />
+                                      Begin 4x4 Protocol
+                                    </button>
+                                  )}
+                                  {(ex.notes || ex.videoUrl) && (
+                                    <div className="mt-3 flex flex-wrap gap-3 items-center">
+                                      {ex.notes && (
+                                        <p className="text-[10px] text-slate-500 font-medium italic border-l-2 border-blue-200 pl-2 leading-relaxed">
+                                          {ex.notes}
+                                        </p>
+                                      )}
+                                      {ex.videoUrl && (
+                                        <a 
+                                          href={ex.videoUrl} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="flex items-center gap-1.5 bg-blue-50 text-blue-600 px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest hover:bg-blue-100 transition-colors"
+                                        >
+                                          <Play className="w-2.5 h-2.5 fill-current" /> Coaching Video
+                                        </a>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="flex gap-2">
                                   <button 
@@ -1069,9 +1569,11 @@ export default function App() {
                                   <div key={set.id} className="flex items-center gap-2 md:gap-3 bg-slate-50 p-2 md:p-2.5 rounded-lg border border-slate-100 text-xs md:text-sm font-medium text-slate-600">
                                     <span className="w-5 text-[10px] font-bold text-slate-400">S{idx+1}</span>
                                     <div className="flex gap-2 flex-wrap">
-                                      {set.weight !== undefined && <span>{set.weight} lb</span>}
-                                      {set.reps !== undefined && <span>{set.reps} reps</span>}
+                                      {set.weight !== undefined && set.weight > 0 && <span>{set.weight} lb</span>}
+                                      {set.reps !== undefined && set.reps > 0 && <span>{set.reps} reps</span>}
                                       {set.time !== undefined && set.time > 0 && <span>{formatTime(set.time)}</span>}
+                                      {set.distance !== undefined && set.distance > 0 && <span>{set.distance} mi</span>}
+                                      {set.heartRate !== undefined && set.heartRate > 0 && <span>{set.heartRate} bpm</span>}
                                     </div>
                                     <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto shrink-0" />
                                   </div>
@@ -1097,34 +1599,137 @@ export default function App() {
             </div>
           ) : (
             <div className="max-w-6xl mx-auto space-y-8">
-              {/* Forge Insights Bento Dashboard */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Main Hero Card */}
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="md:col-span-2 bg-white rounded-[2.5rem] p-8 md:p-12 shadow-2xl shadow-slate-200/50 border border-slate-100 flex flex-col justify-between relative overflow-hidden group"
-                >
-                  <div className="absolute top-0 right-0 -mr-12 -mt-12 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-1000"></div>
-                  <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
-                        <ZapIcon className="w-6 h-6 fill-current" />
-                      </div>
-                      <span className="text-xs font-black text-blue-600 uppercase tracking-widest">Active Status</span>
+              {(() => {
+                const insights = calculateInsights();
+                const buckets = calculateFourBucketProgress();
+                const todayKey = new Date().toDateString();
+                const todaySteps = dailySteps[todayKey] || 0;
+
+                return (
+                  <>
+                    {/* Performance Buckets Widget */}
+                    <div className="grid grid-cols-4 gap-2 md:gap-4">
+                      {[
+                        { label: 'Heavy', icon: <Dumbbell className="w-3 h-3 md:w-4 md:h-4" />, data: buckets.heavy, color: 'text-blue-600', bg: 'bg-blue-50' },
+                        { label: 'Zone 2', icon: <Activity className="w-3 h-3 md:w-4 md:h-4" />, data: buckets.zone2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                        { label: 'HIIT', icon: <Zap className="w-3 h-3 md:w-4 md:h-4" />, data: buckets.hiit, color: 'text-amber-600', bg: 'bg-amber-50' },
+                        { label: 'Steps', icon: <TrendingUp className="w-3 h-3 md:w-4 md:h-4" />, data: buckets.steps, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                      ].map((b, i) => (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.05 }}
+                          key={b.label} 
+                          className="bg-white border border-slate-100 p-2.5 md:p-5 rounded-2xl md:rounded-[2rem] shadow-sm flex flex-col justify-between"
+                        >
+                          <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-2 md:mb-4 gap-1">
+                            <div className={`w-fit p-1.5 ${b.bg} ${b.color} rounded-lg`}>{b.icon}</div>
+                            <span className="text-[7px] md:text-[9px] font-black uppercase tracking-tighter md:tracking-widest text-slate-400">{b.label}</span>
+                          </div>
+                          <div>
+                            <div className="flex items-baseline gap-0.5 md:gap-1">
+                              <span className="text-sm md:text-2xl font-black text-slate-900">{b.data.current}</span>
+                              <span className="text-[8px] md:text-xs font-bold text-slate-300">/{b.data.target}</span>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
                     </div>
-                    <h2 className="text-4xl md:text-5xl font-bold text-slate-900 leading-tight mb-4 tracking-tighter">Forge Your Strength.</h2>
-                    <p className="text-slate-500 text-lg max-w-md leading-relaxed mb-10">
-                      Your persistence is being calculated. Initialize your next training block to continue the progression.
-                    </p>
-                    <button 
-                      onClick={() => setShowBuilder(true)}
-                      className="bg-slate-900 text-white font-bold py-5 px-10 rounded-2xl shadow-xl hover:bg-blue-600 hover:-translate-y-1 transition-all flex items-center gap-3 w-full sm:w-auto"
-                    >
-                      <Play className="w-4 h-4 fill-current" /> Begin Next Session
-                    </button>
-                  </div>
-                </motion.div>
+
+                    <div className="flex flex-col md:flex-row gap-4">
+                      {insights.shouldSuggestVO2 && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="flex-1 bg-white border border-slate-100 rounded-[2rem] p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl">
+                              <Activity className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <h3 className="font-black text-slate-900 tracking-tight">Performance Insight</h3>
+                              <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-lg">
+                                It's been {insights.daysSinceCardio} days since your last intensity block. Intervals are suggested to maintain your aerobic ceiling.
+                              </p>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => {
+                              startNewSession('Pure Cardio', true);
+                              setShowBuilder(false);
+                            }}
+                            className="w-full md:w-auto border border-slate-200 text-slate-900 px-6 py-3 rounded-xl font-black text-xs hover:bg-slate-50 transition-all"
+                          >
+                            Add Interval Session
+                          </button>
+                        </motion.div>
+                      )}
+
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-white border border-slate-100 rounded-[2rem] p-6 shadow-sm flex items-center justify-between gap-6"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
+                            <TrendingUp className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="font-black text-slate-900 tracking-tight">Daily Steps</h3>
+                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">{todaySteps.toLocaleString()} / 10,000</p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            setStepInput(todaySteps > 0 ? todaySteps.toString() : '');
+                            setShowStepLogger(true);
+                          }}
+                          className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-xs hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
+                        >
+                          Log Progress
+                        </button>
+                      </motion.div>
+                    </div>
+
+                    {/* Forge Insights Bento Dashboard */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Main Hero Card */}
+                    <div className="flex flex-col lg:flex-row gap-6">
+                      <motion.div 
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex-1 bg-white rounded-[2.5rem] p-8 md:p-12 shadow-2xl shadow-slate-200/50 border border-slate-100 flex flex-col justify-between relative overflow-hidden group"
+                      >
+                        <div className="absolute top-0 right-0 -mr-12 -mt-12 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-1000"></div>
+                        <div className="relative z-10">
+                          <div className="flex items-center gap-3 mb-6">
+                            <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                              <ZapIcon className="w-6 h-6 fill-current" />
+                            </div>
+                            <span className="text-xs font-black text-blue-600 uppercase tracking-widest">Active Status</span>
+                          </div>
+                          <h2 className="text-4xl md:text-5xl font-bold text-slate-900 leading-tight mb-4 tracking-tighter">Forge Your Strength.</h2>
+                          <p className="text-slate-500 text-lg max-w-md leading-relaxed mb-10">
+                            Your persistence is being calculated. Initialize your next training block to continue the progression.
+                          </p>
+                          <div className="flex flex-wrap gap-4">
+                            <button 
+                              onClick={() => setShowBuilder(true)}
+                              className="bg-slate-900 text-white font-bold py-5 px-10 rounded-2xl shadow-xl hover:bg-blue-600 hover:-translate-y-1 transition-all flex items-center gap-3 w-full sm:w-auto"
+                            >
+                              <Play className="w-4 h-4 fill-current" /> Begin Next Session
+                            </button>
+                            <button 
+                              onClick={startFallbackWorkout}
+                              className="bg-white text-slate-600 border border-slate-200 font-bold py-5 px-10 rounded-2xl hover:bg-slate-50 transition-all flex items-center gap-3 w-full sm:w-auto"
+                            >
+                              <RotateCcw className="w-4 h-4" /> 6-Min Fallback
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </div>
 
                 {/* Tracking Stats */}
                 <div className="space-y-6">
@@ -1147,6 +1752,41 @@ export default function App() {
                             <span className="text-xs font-bold text-slate-400 uppercase">lb moved</span>
                           </div>
                           <p className="text-[10px] text-slate-400 mt-2 font-medium italic">Total cumulative weight across all resistance blocks this week.</p>
+                        </motion.div>
+
+                        <motion.div 
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.15 }}
+                          className="bg-white border border-slate-100 rounded-[2rem] p-6 shadow-xl shadow-slate-100"
+                        >
+                          <div className="flex justify-between items-center mb-4">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Aerobic Engine</span>
+                            <div className="p-2 bg-rose-50 text-rose-600 rounded-lg"><Heart className="w-4 h-4" /></div>
+                          </div>
+                          <div className="space-y-4">
+                            <div className="flex items-baseline justify-between">
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-3xl font-black text-slate-900">{insights.weeklyDistance.toFixed(1)}</span>
+                                <span className="text-xs font-bold text-slate-400 uppercase">mi total</span>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Efficiency Index</p>
+                                <p className="text-sm font-black text-blue-600">{insights.efficiencyRatio}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.1em] mb-0.5">Avg HR</p>
+                                <p className="text-sm font-black text-slate-800">{insights.avgHeartRate > 0 ? `${insights.avgHeartRate} bpm` : '--'}</p>
+                              </div>
+                              <div className="flex-1 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.1em] mb-0.5">Avg Speed</p>
+                                <p className="text-sm font-black text-emerald-600">{insights.avgSpeed > 0 ? `${insights.avgSpeed.toFixed(1)} mph` : '--'}</p>
+                              </div>
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-3 font-medium italic">Efficiency Index: Tracking your heart rate vs output (speed/weight) over 12 weeks.</p>
                         </motion.div>
 
                         <motion.div 
@@ -1228,7 +1868,10 @@ export default function App() {
                      </div>
                    </div>
                 </motion.div>
-              </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -1374,6 +2017,19 @@ export default function App() {
                                      <span key={f} className="text-[8px] px-1 bg-slate-200 text-slate-500 rounded font-bold">{f}</span>
                                    ))}
                                  </div>
+                                 {t.notes && (
+                                   <p className="text-[10px] text-slate-400 mt-2 italic max-w-[200px] leading-tight line-clamp-2">{t.notes}</p>
+                                 )}
+                                 {t.videoUrl && (
+                                   <a 
+                                     href={t.videoUrl} 
+                                     target="_blank" 
+                                     rel="noopener noreferrer"
+                                     className="inline-flex items-center gap-1 mt-2 text-[8px] font-black uppercase tracking-widest text-blue-600 hover:text-blue-700 hover:underline"
+                                   >
+                                     <Play className="w-2 h-2" /> Watch Coaching
+                                   </a>
+                                 )}
                                </div>
                                <button 
                                  onClick={() => addToSession(t)}
@@ -1470,6 +2126,30 @@ export default function App() {
                   <p className="text-[9px] text-slate-400 mt-2 italic">Select specific days or leave empty for 'All'.</p>
                 </div>
 
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">NOTES / CUES</label>
+                  <textarea 
+                    value={newExNotes}
+                    onChange={e => setNewExNotes(e.target.value)}
+                    placeholder="e.g., Keep elbows tucked, pause at top..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 outline-none text-sm min-h-[80px]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">VIDEO LINK (URL)</label>
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      value={newExVideoUrl}
+                      onChange={e => setNewExVideoUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 outline-none text-sm"
+                    />
+                    <Play className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                  </div>
+                </div>
+
                 <div className="flex gap-3 pt-4">
                   <button onClick={() => setShowAddCustom(false)} className="flex-1 py-4 text-slate-500 font-bold hover:bg-slate-50 rounded-2xl transition-colors">Cancel</button>
                   <button 
@@ -1521,7 +2201,7 @@ export default function App() {
                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20"
                          />
                          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
-                           {field === 'Weight' ? 'lb' : field === 'Time' ? 'sec' : ''}
+                           {field === 'Weight' ? 'lb' : field === 'Time' ? 'sec' : field === 'Distance' ? 'mi' : field === 'HeartRate' ? 'bpm' : field === 'Speed' ? 'mph' : ''}
                          </span>
                        </div>
                      </div>
@@ -1540,7 +2220,93 @@ export default function App() {
         )}
       </AnimatePresence>
       <AnimatePresence>
+        {showStepLogger && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-[70]">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[2rem] p-8 w-full max-w-sm shadow-3xl relative overflow-hidden"
+            >
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900 tracking-tight">Step Integration</h3>
+                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-1">
+                    Manual Sync for {new Date().toLocaleDateString()}
+                  </p>
+                </div>
+                <button onClick={() => setShowStepLogger(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">TOTAL STEPS TODAY</label>
+                  <input 
+                    type="number" 
+                    autoFocus
+                    value={stepInput}
+                    onChange={e => setStepInput(e.target.value)}
+                    placeholder="e.g., 8420"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-2xl font-black text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-2 font-medium italic">Target: 7,000 - 10,000 steps for optimal metabolic health.</p>
+                </div>
+
+                <button 
+                  onClick={handleLogSteps}
+                  className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 className="w-5 h-5" /> Sync Data
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
         {viewingPastSession && <SessionDetailModal session={viewingPastSession} onClose={() => setViewingPastSession(null)} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showRepeatDialog && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl flex items-center justify-center p-4 z-[100]">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="bg-white rounded-[3rem] p-10 w-full max-w-md text-center shadow-3xl"
+            >
+              <div className="w-20 h-20 bg-indigo-100 text-indigo-600 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                <RotateCcw className="w-10 h-10" />
+              </div>
+              <h3 className="text-3xl font-black text-slate-900 tracking-tighter mb-2">Block Completed</h3>
+              <p className="text-slate-500 font-medium leading-relaxed mb-8">
+                Excellent efficiency. You've completed the full fallback sequence. Would you like to repeat the circuit?
+              </p>
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={() => {
+                    setShowRepeatDialog(false);
+                    startFallbackWorkout();
+                  }}
+                  className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl hover:bg-indigo-600 transition-all flex items-center justify-center gap-3"
+                >
+                  <RotateCcw className="w-5 h-5" /> Repeat Circuit
+                </button>
+                <button 
+                  onClick={() => {
+                    setShowRepeatDialog(false);
+                    setIntervalMode('none');
+                    setTimerRunning(false);
+                  }}
+                  className="w-full bg-slate-100 text-slate-500 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-all"
+                >
+                  I'm Done
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
     </div>
   );
