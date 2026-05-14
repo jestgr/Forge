@@ -110,6 +110,11 @@ export default function App() {
   const [aiAdvice, setAiAdvice] = useState<{ [exId: string]: string }>({});
   const [isAnalyzing, setIsAnalyzing] = useState<{ [exId: string]: boolean }>({});
   
+  // Google Fit Integration State
+  const [isGoogleConnected, setIsGoogleConnected] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingWorkouts, setPendingWorkouts] = useState<any[]>([]);
+  
   // Timer States
   const [totalSeconds, setTotalSeconds] = useState(0);
   const [restSeconds, setRestSeconds] = useState(0);
@@ -200,6 +205,127 @@ export default function App() {
   }, [session, customExercises, history, dailySteps, activePlanId, planStartDate]);
 
   // Timers Effect
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data === 'OAUTH_AUTH_SUCCESS') {
+        setIsGoogleConnected(true);
+        handleSyncFit();
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const handleConnectFit = async () => {
+    try {
+      const resp = await fetch('/api/auth/google/url');
+      const { url } = await resp.json();
+      const width = 500;
+      const height = 600;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      window.open(url, 'google-fit-auth', `width=${width},height=${height},left=${left},top=${top}`);
+    } catch (err) {
+      console.error("Failed to get auth URL", err);
+    }
+  };
+
+  const handleSyncFit = async () => {
+    setIsSyncing(true);
+    try {
+      const resp = await fetch('/api/fit/sync');
+      if (!resp.ok) {
+        if (resp.status === 401) {
+          setIsGoogleConnected(false);
+          return;
+        }
+        throw new Error("Sync failed");
+      }
+      setIsGoogleConnected(true);
+      const data = await resp.json();
+      
+      // Update steps for today
+      if (data.steps > 0) {
+        const todayKey = new Date().toDateString();
+        setDailySteps(prev => ({ ...prev, [todayKey]: data.steps }));
+      }
+      
+      // Matching Logic
+      const matched: any[] = [];
+      const unmatched: any[] = [];
+
+      (data.workouts || []).forEach((gfWorkout: any) => {
+        // Try to find a match in history
+        const match = history.find(session => {
+          // If already synced, skip
+          if (session.googleFitSessionId === gfWorkout.id) return false;
+          
+          const timeDiff = Math.abs(session.startTime - gfWorkout.startTime);
+          return timeDiff < (30 * 60 * 1000); // 30 minutes window for matching
+        });
+
+        if (match) {
+          matched.push({ ...gfWorkout, appSessionId: match.id });
+        } else {
+          // Only add to unmatched if not already synced in history
+          if (!history.some(h => h.googleFitSessionId === gfWorkout.id)) {
+            unmatched.push(gfWorkout);
+          }
+        }
+      });
+
+      setPendingWorkouts(unmatched);
+
+      if (matched.length > 0) {
+        setHistory(prev => prev.map(session => {
+          const m = matched.find(match => match.appSessionId === session.id);
+          if (m) {
+            return {
+              ...session,
+              googleFitSessionId: m.id,
+              calories: m.calories,
+              avgHeartRate: m.avgHeartRate
+            };
+          }
+          return session;
+        }));
+      }
+
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const importUnmatchedWorkout = (workout: any, bucket: 'Heavy' | 'Zone 2' | 'HIIT') => {
+    const sessionType: SessionType = bucket === 'Heavy' ? 'Lower Body' : 'Pure Cardio';
+    
+    // Check if duplicate
+    if (history.some(h => h.googleFitSessionId === workout.id)) {
+      setPendingWorkouts(prev => prev.filter(w => w.id !== workout.id));
+      return;
+    }
+
+    const newSession: WorkoutSession = {
+      id: `gf_${workout.id}_${Date.now()}`,
+      name: `Synced: ${workout.name || 'Workout'}`,
+      type: sessionType,
+      hasCardio: bucket !== 'Heavy',
+      startTime: workout.startTime,
+      endTime: workout.endTime,
+      status: 'completed',
+      exercises: [], 
+      calories: workout.calories,
+      avgHeartRate: workout.avgHeartRate,
+      googleFitSessionId: workout.id,
+      estimatedDuration: Math.round((workout.endTime - workout.startTime) / 60000)
+    };
+
+    setHistory([newSession, ...history]);
+    setPendingWorkouts(prev => prev.filter(w => w.id !== workout.id));
+  };
+
   useEffect(() => {
     let interval: any;
     if (timerRunning) {
@@ -851,6 +977,27 @@ export default function App() {
         </div>
         
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            {s.calories !== undefined && (
+              <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
+                <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-1">Calories Burned</p>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-2xl font-black text-slate-900">{Math.round(s.calories)}</span>
+                  <span className="text-xs font-bold text-slate-400">kcal</span>
+                </div>
+              </div>
+            )}
+            {s.avgHeartRate !== undefined && (
+              <div className="bg-rose-50 p-4 rounded-2xl border border-rose-100">
+                <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-1">Avg Heart Rate</p>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-2xl font-black text-slate-900">{Math.round(s.avgHeartRate)}</span>
+                  <span className="text-xs font-bold text-slate-400">bpm</span>
+                </div>
+              </div>
+            )}
+          </div>
+
           {s.exercises.map(ex => (
             <div key={ex.id} className="space-y-3">
               <div className="flex justify-between items-center border-b border-slate-50 pb-2">
@@ -890,6 +1037,63 @@ export default function App() {
               </div>
             </div>
           ))}
+        </div>
+      </motion.div>
+    </div>
+  );
+
+  const PendingWorkoutsModal = () => (
+    <div className="fixed inset-0 bg-slate-900/60 z-[90] backdrop-blur-md flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+          <div>
+            <h3 className="text-xl font-bold text-slate-800 tracking-tight">Unlogged Activities</h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Detected from your Google Fit Sync</p>
+          </div>
+          <button onClick={() => setPendingWorkouts([])} className="p-2 hover:bg-slate-200 rounded-lg transition-colors">
+            <X className="w-5 h-5 text-slate-400" />
+          </button>
+        </div>
+        
+        <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+          {pendingWorkouts.map(w => (
+            <div key={w.id} className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-4">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h4 className="font-bold text-slate-800">{w.name || 'External Workout'}</h4>
+                  <p className="text-[10px] text-slate-400">{new Date(w.startTime).toLocaleString()} • {Math.round((w.endTime - w.startTime)/60000)} min</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-black text-rose-500">{Math.round(w.calories)} kcal</p>
+                  <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{Math.round(w.avgHeartRate)} bpm avg</p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-2">
+                {(['Heavy', 'Zone 2', 'HIIT'] as const).map(bucket => (
+                  <button 
+                    key={bucket}
+                    onClick={() => importUnmatchedWorkout(w, bucket)}
+                    className="py-2 bg-white border border-slate-200 hover:border-blue-500 hover:text-blue-600 rounded-xl text-[10px] font-black uppercase transition-all"
+                  >
+                    {bucket}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="p-6 bg-slate-50 border-t border-slate-100">
+           <button 
+            onClick={() => setPendingWorkouts([])}
+            className="w-full py-4 text-slate-500 font-bold hover:bg-white rounded-2xl border border-transparent hover:border-slate-200 transition-all text-sm"
+           >
+             Dismiss All
+           </button>
         </div>
       </motion.div>
     </div>
@@ -1672,23 +1876,36 @@ export default function App() {
                         className="bg-white border border-slate-100 rounded-[2rem] p-6 shadow-sm flex items-center justify-between gap-6"
                       >
                         <div className="flex items-center gap-4">
-                          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
+                          <div className={`p-3 rounded-2xl ${isGoogleConnected ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
                             <TrendingUp className="w-5 h-5" />
                           </div>
                           <div>
                             <h3 className="font-black text-slate-900 tracking-tight">Daily Steps</h3>
-                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">{todaySteps.toLocaleString()} / 10,000</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">{todaySteps.toLocaleString()} / 10,000</p>
+                              {isGoogleConnected && <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" title="Google Fit Connected" />}
+                            </div>
                           </div>
                         </div>
-                        <button 
-                          onClick={() => {
-                            setStepInput(todaySteps > 0 ? todaySteps.toString() : '');
-                            setShowStepLogger(true);
-                          }}
-                          className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-xs hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
-                        >
-                          Log Progress
-                        </button>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => {
+                              setStepInput(todaySteps > 0 ? todaySteps.toString() : '');
+                              setShowStepLogger(true);
+                            }}
+                            className="bg-slate-100 text-slate-600 px-4 py-3 rounded-xl font-bold text-xs hover:bg-slate-200 transition-all"
+                          >
+                            Log
+                          </button>
+                          <button 
+                            onClick={isGoogleConnected ? handleSyncFit : handleConnectFit}
+                            disabled={isSyncing}
+                            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-xs transition-all shadow-lg ${isGoogleConnected ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-100' : 'bg-slate-900 text-white hover:bg-slate-800 shadow-slate-200'}`}
+                          >
+                            {isSyncing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
+                            {isGoogleConnected ? 'Sync Fit' : 'Connect Fit'}
+                          </button>
+                        </div>
                       </motion.div>
                     </div>
 
@@ -2267,6 +2484,9 @@ export default function App() {
       </AnimatePresence>
       <AnimatePresence>
         {viewingPastSession && <SessionDetailModal session={viewingPastSession} onClose={() => setViewingPastSession(null)} />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {pendingWorkouts.length > 0 && <PendingWorkoutsModal />}
       </AnimatePresence>
       <AnimatePresence>
         {showRepeatDialog && (

@@ -62,6 +62,9 @@ export interface WorkoutSession {
   exercises: ActiveExercise[];
   status: 'active' | 'completed';
   estimatedDuration: number; // minutes
+  calories?: number;
+  avgHeartRate?: number;
+  googleFitSessionId?: string;
 }
 
 export interface PlanSession {

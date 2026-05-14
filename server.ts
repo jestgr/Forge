@@ -1,0 +1,186 @@
+import express from "express";
+import path from "path";
+import { createServer as createViteServer } from "vite";
+import { OAuth2Client } from "google-auth-library";
+import cookieParser from "cookie-parser";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const app = express();
+const PORT = 3000;
+
+app.use(express.json());
+app.use(cookieParser());
+
+const oauth2Client = new OAuth2Client(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  `${process.env.APP_URL}/auth/callback`
+);
+
+// Scopes for Google Fit
+const SCOPES = [
+  "https://www.googleapis.com/auth/fitness.activity.read",
+  "https://www.googleapis.com/auth/fitness.body.read",
+  "https://www.googleapis.com/auth/fitness.location.read"
+];
+
+// Auth URL endpoint
+app.get("/api/auth/google/url", (req, res) => {
+  const url = oauth2Client.generateAuthUrl({
+    access_type: "offline",
+    scope: SCOPES,
+    prompt: "consent"
+  });
+  res.json({ url });
+});
+
+// OAuth Callback
+app.get(["/auth/callback", "/auth/callback/"], async (req, res) => {
+  const { code } = req.query;
+  try {
+    const { tokens } = await oauth2Client.getToken(code as string);
+    
+    // Store tokens in a secure cookie
+    res.cookie("google_fit_tokens", JSON.stringify(tokens), {
+      secure: true,
+      sameSite: "none",
+      httpOnly: true,
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    });
+
+    res.send(`
+      <html>
+        <body>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage('OAUTH_AUTH_SUCCESS', '*');
+              window.close();
+            } else {
+              window.location.href = '/';
+            }
+          </script>
+          <p>Authentication successful. You can close this window.</p>
+        </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error("OAuth Exchange Error:", error);
+    res.status(500).send("Authentication failed");
+  }
+});
+
+// Get Google Fit Data
+app.get("/api/fit/sync", async (req, res) => {
+  const tokenCookie = req.cookies.google_fit_tokens;
+  if (!tokenCookie) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  const tokens = JSON.parse(tokenCookie);
+  oauth2Client.setCredentials(tokens);
+
+  try {
+    const now = new Date();
+    const startTimeMillis = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const endTimeMillis = now.getTime();
+
+    // 1. Fetch Steps
+    const stepsResponse = await oauth2Client.request({
+      url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
+      method: "POST",
+      data: {
+        aggregateBy: [{ dataSourceId: "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps" }],
+        bucketByTime: { durationMillis: endTimeMillis - startTimeMillis },
+        startTimeMillis,
+        endTimeMillis
+      }
+    }) as any;
+
+    let totalSteps = 0;
+    if (stepsResponse.data.bucket && stepsResponse.data.bucket[0].dataset[0].point[0]) {
+      totalSteps = stepsResponse.data.bucket[0].dataset[0].point[0].value[0].intVal || 0;
+    }
+
+    // 2. Fetch Sessions (Workouts) for the day
+    const sessionsResponse = await oauth2Client.request({
+      url: `https://www.googleapis.com/fitness/v1/users/me/sessions?startTime=${new Date(startTimeMillis).toISOString()}&endTime=${new Date(endTimeMillis).toISOString()}`,
+      method: "GET"
+    }) as any;
+
+    const sessions = sessionsResponse.data.deletedSession ? [] : sessionsResponse.data.session || [];
+
+    // 3. For each session, fetch heart rate and calories
+    const detailedSessions = await Promise.all(sessions.map(async (session: any) => {
+      const sStart = parseInt(session.startTimeMillis);
+      const sEnd = parseInt(session.endTimeMillis);
+
+      const statsResponse = await oauth2Client.request({
+        url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
+        method: "POST",
+        data: {
+          aggregateBy: [
+            { dataTypeName: "com.google.heart_rate.bpm" },
+            { dataTypeName: "com.google.calories.expended" }
+          ],
+          bucketByTime: { durationMillis: sEnd - sStart },
+          startTimeMillis: sStart,
+          endTimeMillis: sEnd
+        }
+      }) as any;
+
+      let avgHeartRate = 0;
+      let totalCalories = 0;
+
+      if (statsResponse.data.bucket && statsResponse.data.bucket[0]) {
+        const heartRateSet = statsResponse.data.bucket[0].dataset.find((ds: any) => ds.dataSourceId.includes("heart_rate"));
+        const caloriesSet = statsResponse.data.bucket[0].dataset.find((ds: any) => ds.dataSourceId.includes("calories"));
+
+        if (heartRateSet?.point[0]) avgHeartRate = Math.round(heartRateSet.point[0].value[0].fpVal || 0);
+        if (caloriesSet?.point[0]) totalCalories = Math.round(caloriesSet.point[0].value[0].fpVal || 0);
+      }
+
+      return {
+        id: session.id,
+        name: session.name,
+        type: session.activityType,
+        startTime: sStart,
+        endTime: sEnd,
+        avgHeartRate,
+        calories: totalCalories
+      };
+    }));
+
+    res.json({
+      steps: totalSteps,
+      workouts: detailedSessions
+    });
+  } catch (error) {
+    console.error("Google Fit Fetch Error:", error);
+    res.status(500).json({ error: "Failed to fetch data from Google Fit" });
+  }
+});
+
+// Vite middleware setup
+async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();
