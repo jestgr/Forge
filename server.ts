@@ -13,16 +13,20 @@ const PORT = 3000;
 app.use(express.json());
 app.use(cookieParser());
 
-const APP_URL = (process.env.APP_URL || "").trim().replace(/\/$/, "");
-const REDIRECT_URI = `${APP_URL}/auth/callback`;
-
-console.log("Configured Redirect URI:", REDIRECT_URI);
-
-const oauth2Client = new OAuth2Client(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  REDIRECT_URI
-);
+const getOAuthClient = (req: any) => {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+  const host = req.get("host");
+  const redirectUri = `${protocol}://${host}/auth/callback`;
+  
+  return {
+    client: new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      redirectUri
+    ),
+    redirectUri
+  };
+};
 
 // Scopes for Google Fit
 const SCOPES = [
@@ -33,20 +37,22 @@ const SCOPES = [
 
 // Auth URL endpoint
 app.get("/api/auth/google/url", (req, res) => {
-  const url = oauth2Client.generateAuthUrl({
+  const { client, redirectUri } = getOAuthClient(req);
+  const url = client.generateAuthUrl({
     access_type: "offline",
     scope: SCOPES,
     prompt: "consent"
   });
-  console.log("Generated Auth URL:", url);
-  res.json({ url, debug_redirect_uri: REDIRECT_URI });
+  console.log("Generated Auth URL with Redirect URI:", redirectUri);
+  res.json({ url, debug_redirect_uri: redirectUri });
 });
 
 // OAuth Callback
 app.get(["/auth/callback", "/auth/callback/"], async (req, res) => {
   const { code } = req.query;
+  const { client } = getOAuthClient(req);
   try {
-    const { tokens } = await oauth2Client.getToken(code as string);
+    const { tokens } = await client.getToken(code as string);
     
     // Store tokens in a secure cookie
     res.cookie("google_fit_tokens", JSON.stringify(tokens), {
@@ -84,8 +90,9 @@ app.get("/api/fit/sync", async (req, res) => {
     return res.status(401).json({ error: "Not authenticated" });
   }
 
+  const { client } = getOAuthClient(req);
   const tokens = JSON.parse(tokenCookie);
-  oauth2Client.setCredentials(tokens);
+  client.setCredentials(tokens);
 
   try {
     const now = new Date();
@@ -93,7 +100,7 @@ app.get("/api/fit/sync", async (req, res) => {
     const endTimeMillis = now.getTime();
 
     // 1. Fetch Steps
-    const stepsResponse = await oauth2Client.request({
+    const stepsResponse = await client.request({
       url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
       method: "POST",
       data: {
@@ -110,7 +117,7 @@ app.get("/api/fit/sync", async (req, res) => {
     }
 
     // 2. Fetch Sessions (Workouts) for the day
-    const sessionsResponse = await oauth2Client.request({
+    const sessionsResponse = await client.request({
       url: `https://www.googleapis.com/fitness/v1/users/me/sessions?startTime=${new Date(startTimeMillis).toISOString()}&endTime=${new Date(endTimeMillis).toISOString()}`,
       method: "GET"
     }) as any;
@@ -122,7 +129,7 @@ app.get("/api/fit/sync", async (req, res) => {
       const sStart = parseInt(session.startTimeMillis);
       const sEnd = parseInt(session.endTimeMillis);
 
-      const statsResponse = await oauth2Client.request({
+      const statsResponse = await client.request({
         url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
         method: "POST",
         data: {
