@@ -13,10 +13,15 @@ const PORT = 3000;
 app.use(express.json());
 app.use(cookieParser());
 
+const APP_URL = (process.env.APP_URL || "").trim().replace(/\/$/, "");
+const REDIRECT_URI = `${APP_URL}/auth/callback`;
+
+console.log("Configured Redirect URI:", REDIRECT_URI);
+
 const oauth2Client = new OAuth2Client(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  `${process.env.APP_URL}/auth/callback`
+  REDIRECT_URI
 );
 
 // Scopes for Google Fit
@@ -33,7 +38,8 @@ app.get("/api/auth/google/url", (req, res) => {
     scope: SCOPES,
     prompt: "consent"
   });
-  res.json({ url });
+  console.log("Generated Auth URL:", url);
+  res.json({ url, debug_redirect_uri: REDIRECT_URI });
 });
 
 // OAuth Callback

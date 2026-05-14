@@ -234,7 +234,8 @@ export default function App() {
   const handleConnectFit = async () => {
     try {
       const resp = await fetch('/api/auth/google/url');
-      const { url } = await resp.json();
+      const { url, debug_redirect_uri } = await resp.json();
+      console.log("App attempting OAuth with Redirect URI:", debug_redirect_uri);
       const width = 500;
       const height = 600;
       const left = window.screenX + (window.outerWidth - width) / 2;
