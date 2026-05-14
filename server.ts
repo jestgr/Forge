@@ -14,9 +14,28 @@ app.use(express.json());
 app.use(cookieParser());
 
 const getOAuthClient = (req: any) => {
+  // Respect common proxy headers
   const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+  const forwardedHost = req.headers["x-forwarded-host"];
   const host = req.get("host");
-  const redirectUri = `${protocol}://${host}/auth/callback`;
+
+  // Determine the best base URL
+  let baseUrl;
+  
+  // 1. If x-forwarded-host is present, it's usually the public URL
+  if (forwardedHost) {
+    baseUrl = `${protocol}://${forwardedHost}`;
+  } 
+  // 2. If host is generic/internal but we have APP_URL, use APP_URL
+  else if (process.env.APP_URL && (host === 'localhost:3000' || host === '0.0.0.0:3000' || !host)) {
+    baseUrl = process.env.APP_URL.trim().replace(/\/$/, "");
+  }
+  // 3. Fallback to current host
+  else {
+    baseUrl = `${protocol}://${host}`;
+  }
+
+  const redirectUri = `${baseUrl}/auth/callback`;
   
   return {
     client: new OAuth2Client(
@@ -41,10 +60,30 @@ app.get("/api/auth/google/url", (req, res) => {
   const url = client.generateAuthUrl({
     access_type: "offline",
     scope: SCOPES,
-    prompt: "consent"
+    prompt: "consent",
+    // Adding state to keep track of the original host if needed
+    state: Buffer.from(redirectUri).toString('base64')
   });
-  console.log("Generated Auth URL with Redirect URI:", redirectUri);
-  res.json({ url, debug_redirect_uri: redirectUri });
+  console.log("Current Setup - Redirect URI:", redirectUri);
+  console.log("Client ID Present:", !!process.env.GOOGLE_CLIENT_ID);
+  res.json({ 
+    url, 
+    debug_redirect_uri: redirectUri,
+    is_configured: !!process.env.GOOGLE_CLIENT_ID 
+  });
+});
+
+app.get("/api/fit/status", (req, res) => {
+  res.json({
+    configured: !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET,
+    has_client_id: !!process.env.GOOGLE_CLIENT_ID,
+    has_client_secret: !!process.env.GOOGLE_CLIENT_SECRET,
+    detected_host: req.get("host"),
+    detected_proto: req.headers["x-forwarded-proto"] || req.protocol,
+    forwarded_host: req.headers["x-forwarded-host"],
+    app_url_env: process.env.APP_URL ? "Set (Hidden)" : "Not Set",
+    runtime_redirect_uri: getOAuthClient(req).redirectUri
+  });
 });
 
 // OAuth Callback

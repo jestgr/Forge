@@ -209,6 +209,13 @@ export default function App() {
     // Check if we already have a session
     const checkAuth = async () => {
       try {
+        const statusResp = await fetch('/api/fit/status');
+        const status = await statusResp.json();
+        
+        if (!status.configured) {
+          console.warn("Google Fit is NOT configured: Missing Client ID or Secret in environment.");
+        }
+
         const resp = await fetch('/api/fit/sync');
         if (resp.ok) {
           setIsGoogleConnected(true);
