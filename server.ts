@@ -14,27 +14,26 @@ app.use(express.json());
 app.use(cookieParser());
 
 const getOAuthClient = (req: any) => {
-  // Respect common proxy headers
-  const protocol = req.headers["x-forwarded-proto"] || req.protocol;
-  const forwardedHost = req.headers["x-forwarded-host"];
-  const host = req.get("host");
+  // Always use https for public redirect URIs unless it's explicitly localhost (though Google Fit requires https anyway)
+  const protocol = "https";
+  const host = req.headers["x-forwarded-host"] || req.get("host");
 
-  // Determine the best base URL
   let baseUrl;
   
-  // 1. If x-forwarded-host is present, it's usually the public URL
-  if (forwardedHost) {
-    baseUrl = `${protocol}://${forwardedHost}`;
-  } 
-  // 2. If host is generic/internal but we have APP_URL, use APP_URL
-  else if (process.env.APP_URL && (host === 'localhost:3000' || host === '0.0.0.0:3000' || !host)) {
+  // Use HTTPS for everything on these domains
+  if (process.env.APP_URL && (host === 'localhost:3000' || host === '0.0.0.0:3000' || !host)) {
     baseUrl = process.env.APP_URL.trim().replace(/\/$/, "");
-  }
-  // 3. Fallback to current host
-  else {
+  } else {
     baseUrl = `${protocol}://${host}`;
   }
 
+  // Ensure the base URL uses https if it's a cloud run domain
+  if (baseUrl.includes('.run.app') && baseUrl.startsWith('http:')) {
+    baseUrl = baseUrl.replace('http:', 'https:');
+  }
+
+  // Ensure no trailing slash on baseUrl
+  baseUrl = baseUrl.replace(/\/$/, "");
   const redirectUri = `${baseUrl}/auth/callback`;
   
   return {
