@@ -106,6 +106,7 @@ export default function App() {
   const [expandedHistoryExId, setExpandedHistoryExId] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<'Dashboard' | 'Calendar' | 'Plans'>('Dashboard');
   const [viewingPastSession, setViewingPastSession] = useState<WorkoutSession | null>(null);
+  const [viewingDayDetails, setViewingDayDetails] = useState<string | null>(null); // Date string
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [aiAdvice, setAiAdvice] = useState<{ [exId: string]: string }>({});
   const [isAnalyzing, setIsAnalyzing] = useState<{ [exId: string]: boolean }>({});
@@ -216,7 +217,10 @@ export default function App() {
           console.warn("Google Fit is NOT configured: Missing Client ID or Secret in environment.");
         }
 
-        const resp = await fetch('/api/fit/sync');
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const end = now.getTime();
+        const resp = await fetch(`/api/fit/sync?startTime=${start}&endTime=${end}`);
         if (resp.ok) {
           setIsGoogleConnected(true);
           // Auto-sync on load if connected
@@ -256,7 +260,10 @@ export default function App() {
   const handleSyncFit = async () => {
     setIsSyncing(true);
     try {
-      const resp = await fetch('/api/fit/sync');
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      const end = now.getTime();
+      const resp = await fetch(`/api/fit/sync?startTime=${start}&endTime=${end}`);
       if (!resp.ok) {
         if (resp.status === 401) {
           setIsGoogleConnected(false);
@@ -905,7 +912,8 @@ export default function App() {
       d.setDate(d.getDate() - i);
       const ds = d.toDateString();
       const hasWorkout = history.some(s => new Date(s.startTime).toDateString() === ds);
-      heatmap.push({ date: d, active: hasWorkout });
+      const hasSteps = (dailySteps[ds] || 0) >= 5000;
+      heatmap.push({ date: d, active: hasWorkout || hasSteps });
     }
 
     let totalCardioSets = 0;
@@ -997,6 +1005,88 @@ export default function App() {
       case 'Pure Cardio': return 'text-rose-600';
       default: return 'text-slate-600';
     }
+  };
+
+  const getBucketForSession = (s: WorkoutSession): 'Heavy' | 'Zone 2' | 'HIIT' | 'Other' => {
+    const duration = s.endTime ? (s.endTime - s.startTime) / 60000 : 0;
+    if (['Lower Body', 'Chest/Shoulders', 'Back/Biceps'].includes(s.type) && duration >= 30) return 'Heavy';
+    if ((s.type === 'Pure Cardio' || s.hasCardio) && duration >= 45) return 'Zone 2';
+    if (s.type === 'Pure Cardio' && duration < 40 && duration >= 15) return 'HIIT';
+    return 'Other';
+  };
+
+  const DaySummaryModal = ({ dateStr, onClose }: { dateStr: string, onClose: () => void }) => {
+    const sessionsOnDay = history.filter(s => new Date(s.startTime).toDateString() === dateStr);
+    const stepsOnDay = dailySteps[dateStr] || 0;
+    const date = new Date(dateStr);
+
+    return (
+      <div className="fixed inset-0 bg-slate-900/60 z-[80] backdrop-blur-md flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col"
+        >
+          <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+            <div>
+              <h3 className="text-xl font-bold text-slate-800 tracking-tight">{date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Daily Summary</p>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-lg transition-colors">
+              <X className="w-5 h-5 text-slate-400" />
+            </button>
+          </div>
+          
+          <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
+            {/* Steps Card */}
+            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-5 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-white rounded-xl text-indigo-600 shadow-sm">
+                  <Activity className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-0.5">Total Movement</p>
+                  <p className="text-2xl font-black text-slate-900">{stepsOnDay.toLocaleString()} <span className="text-xs font-bold text-slate-400">steps</span></p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-bold text-slate-400 uppercase">Goal</p>
+                <p className={`text-xs font-black ${stepsOnDay >= 10000 ? 'text-green-600' : 'text-slate-500'}`}>{Math.round((stepsOnDay/10000)*100)}%</p>
+              </div>
+            </div>
+
+            {/* Sessions List */}
+            <div className="space-y-4">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">Completed Blocks</h4>
+              {sessionsOnDay.length > 0 ? (
+                sessionsOnDay.map(s => {
+                  const bucket = getBucketForSession(s);
+                  return (
+                    <div key={s.id} className="bg-white border border-slate-100 rounded-2xl p-4 flex items-center justify-between hover:border-blue-500 transition-colors cursor-pointer group" onClick={() => { onClose(); setViewingPastSession(s); }}>
+                      <div className="flex items-center gap-4">
+                        <div className={`w-2 h-10 rounded-full ${getSplitColor(s.type)}`} />
+                        <div>
+                          <div className="flex items-center gap-2">
+                             <h5 className="font-bold text-slate-800 text-sm">{s.name}</h5>
+                             <span className="text-[8px] font-black px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded uppercase">{bucket}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            {new Date(s.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {Math.round(((s.endTime || Date.now()) - s.startTime)/60000)}m
+                          </p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 transition-colors" />
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-xs text-slate-400 italic text-center py-4">No workout sessions recorded for this day.</p>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
   };
 
   const SessionDetailModal = ({ session: s, onClose }: { session: WorkoutSession, onClose: () => void }) => (
@@ -1246,30 +1336,56 @@ export default function App() {
     for (let i = 0; i < startDay; i++) {
        days.push(<div key={`pad-${i}`} className="h-24 bg-slate-50/20 border border-slate-100/50" />);
     }
-    
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day);
-      const dateStr = date.toDateString();
-      const sessionsOnDay = history.filter(s => new Date(s.startTime).toDateString() === dateStr);
-      const isToday = new Date().toDateString() === dateStr;
+       for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day);
+        const dateStr = date.toDateString();
+        const sessionsOnDay = history.filter(s => new Date(s.startTime).toDateString() === dateStr);
+        const stepsOnDay = dailySteps[dateStr] || 0;
+        const isToday = new Date().toDateString() === dateStr;
 
-      days.push(
-        <div key={day} className={`h-24 p-2 border border-slate-100 relative group overflow-hidden bg-white hover:bg-slate-50 transition-colors ${isToday ? 'bg-blue-50/30' : ''}`}>
-          <span className={`text-[10px] font-bold ${isToday ? 'text-blue-600' : 'text-slate-400'}`}>{day}</span>
-          <div className="mt-1 space-y-1">
-            {sessionsOnDay.map(s => (
-              <button 
-                key={s.id}
-                onClick={() => setViewingPastSession(s)}
-                className={`w-full text-[8px] font-bold text-white px-1.5 py-1 rounded truncate leading-none transition-transform active:scale-95 ${getSplitColor(s.type)}`}
-              >
-                {s.type.split('/')[0]} {s.hasCardio ? '⚡' : ''}
-              </button>
-            ))}
+        days.push(
+          <div 
+            key={day} 
+            onClick={() => setViewingDayDetails(dateStr)}
+            className={`h-24 p-2 border border-slate-100 relative group overflow-hidden bg-white hover:bg-slate-50 transition-colors cursor-pointer ${isToday ? 'bg-blue-50/10' : ''}`}
+          >
+            <div className="flex justify-between items-start">
+              <span className={`text-[10px] font-bold ${isToday ? 'text-blue-600' : 'text-slate-400'}`}>{day}</span>
+              {stepsOnDay > 0 && (
+                <div className="flex items-center gap-0.5 text-[7px] font-black text-indigo-500 bg-indigo-50 px-1 rounded">
+                  <Activity className="w-1.5 h-1.5" />
+                  {(stepsOnDay/1000).toFixed(1)}k
+                </div>
+              )}
+            </div>
+            
+            <div className="mt-1 flex flex-wrap gap-1">
+              {sessionsOnDay.map(s => {
+                const bucket = getBucketForSession(s);
+                return (
+                  <div 
+                    key={s.id}
+                    title={`${s.name} (${bucket})`}
+                    className={`w-1.5 h-1.5 rounded-full ${getSplitColor(s.type)}`}
+                  />
+                );
+              })}
+            </div>
+            
+            <div className="mt-1 space-y-0.5">
+              {sessionsOnDay.slice(0, 2).map(s => (
+                <div 
+                  key={s.id}
+                  className={`text-[6px] font-bold text-white px-1 py-0.5 rounded truncate leading-none ${getSplitColor(s.type)}`}
+                >
+                  {s.type.split('/')[0]}
+                </div>
+              ))}
+              {sessionsOnDay.length > 2 && <p className="text-[6px] text-slate-300 font-bold">+{sessionsOnDay.length - 2} more</p>}
+            </div>
           </div>
-        </div>
-      );
-    }
+        );
+      }
 
     return (
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto space-y-6">
@@ -2529,6 +2645,7 @@ export default function App() {
       </AnimatePresence>
       <AnimatePresence>
         {viewingPastSession && <SessionDetailModal session={viewingPastSession} onClose={() => setViewingPastSession(null)} />}
+        {viewingDayDetails && <DaySummaryModal dateStr={viewingDayDetails} onClose={() => setViewingDayDetails(null)} />}
       </AnimatePresence>
       <AnimatePresence>
         {pendingWorkouts.length > 0 && <PendingWorkoutsModal />}

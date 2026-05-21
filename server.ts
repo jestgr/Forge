@@ -134,15 +134,19 @@ app.get("/api/fit/sync", async (req, res) => {
 
   try {
     const now = new Date();
-    const startTimeMillis = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const endTimeMillis = now.getTime();
+    // Default to today if no range provided (server-side fallback)
+    const defaultStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const defaultEnd = now.getTime();
+
+    const startTimeMillis = req.query.startTime ? parseInt(req.query.startTime as string) : defaultStart;
+    const endTimeMillis = req.query.endTime ? parseInt(req.query.endTime as string) : defaultEnd;
 
     // 1. Fetch Steps
     const stepsResponse = await client.request({
       url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
       method: "POST",
       data: {
-        aggregateBy: [{ dataSourceId: "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps" }],
+        aggregateBy: [{ dataTypeName: "com.google.step_count.delta" }],
         bucketByTime: { durationMillis: endTimeMillis - startTimeMillis },
         startTimeMillis,
         endTimeMillis
