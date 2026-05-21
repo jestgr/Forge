@@ -141,24 +141,35 @@ app.get("/api/fit/sync", async (req, res) => {
     const startTimeMillis = req.query.startTime ? parseInt(req.query.startTime as string) : defaultStart;
     const endTimeMillis = req.query.endTime ? parseInt(req.query.endTime as string) : defaultEnd;
 
-    // 1. Fetch Steps
+    // 1. Fetch Steps (Bucket by Day)
     const stepsResponse = await client.request({
       url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
       method: "POST",
       data: {
         aggregateBy: [{ dataTypeName: "com.google.step_count.delta" }],
-        bucketByTime: { durationMillis: endTimeMillis - startTimeMillis },
+        bucketByTime: { durationMillis: 86400000 }, // 24 hours
         startTimeMillis,
         endTimeMillis
       }
     }) as any;
 
+    const dailyStepsMap: { [dateStr: string]: number } = {};
     let totalSteps = 0;
-    if (stepsResponse.data.bucket && stepsResponse.data.bucket[0].dataset[0].point[0]) {
-      totalSteps = stepsResponse.data.bucket[0].dataset[0].point[0].value[0].intVal || 0;
+
+    if (stepsResponse.data.bucket) {
+      stepsResponse.data.bucket.forEach((bucket: any) => {
+        const date = new Date(parseInt(bucket.startTimeMillis));
+        const dateStr = date.toDateString();
+        let bucketSteps = 0;
+        if (bucket.dataset[0].point[0]) {
+          bucketSteps = bucket.dataset[0].point[0].value[0].intVal || 0;
+        }
+        dailyStepsMap[dateStr] = bucketSteps;
+        totalSteps += bucketSteps;
+      });
     }
 
-    // 2. Fetch Sessions (Workouts) for the day
+    // 2. Fetch Sessions (Workouts) for the range
     const sessionsResponse = await client.request({
       url: `https://www.googleapis.com/fitness/v1/users/me/sessions?startTime=${new Date(startTimeMillis).toISOString()}&endTime=${new Date(endTimeMillis).toISOString()}`,
       method: "GET"
@@ -217,6 +228,7 @@ app.get("/api/fit/sync", async (req, res) => {
 
     res.json({
       steps: totalSteps,
+      dailyStepsMap,
       workouts: detailedSessions
     });
   } catch (error) {

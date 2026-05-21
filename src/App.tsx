@@ -218,6 +218,7 @@ export default function App() {
         }
 
         const now = new Date();
+        // Check last 24h for auth verification, but handleSyncFit will look back further
         const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
         const end = now.getTime();
         const resp = await fetch(`/api/fit/sync?startTime=${start}&endTime=${end}`);
@@ -261,8 +262,11 @@ export default function App() {
     setIsSyncing(true);
     try {
       const now = new Date();
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      // Look back 7 days for historical catch-up
+      const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+      const start = new Date(sevenDaysAgo.getFullYear(), sevenDaysAgo.getMonth(), sevenDaysAgo.getDate()).getTime();
       const end = now.getTime();
+      
       const resp = await fetch(`/api/fit/sync?startTime=${start}&endTime=${end}`);
       if (!resp.ok) {
         if (resp.status === 401) {
@@ -274,8 +278,11 @@ export default function App() {
       setIsGoogleConnected(true);
       const data = await resp.json();
       
-      // Update steps for today
-      if (data.steps > 0) {
+      // Update steps using the daily map for all synced days
+      if (data.dailyStepsMap) {
+        setDailySteps(prev => ({ ...prev, ...data.dailyStepsMap }));
+      } else if (data.steps > 0) {
+        // Fallback for today if map is missing
         const todayKey = new Date().toDateString();
         setDailySteps(prev => ({ ...prev, [todayKey]: data.steps }));
       }
@@ -291,7 +298,8 @@ export default function App() {
           if (session.googleFitSessionId === gfWorkout.id) return false;
           
           const timeDiff = Math.abs(session.startTime - gfWorkout.startTime);
-          return timeDiff < (30 * 60 * 1000); // 30 minutes window for matching
+          // Match if within 1 hour
+          return timeDiff < (60 * 60 * 1000); 
         });
 
         if (match) {
