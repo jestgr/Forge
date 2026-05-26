@@ -54,7 +54,8 @@ import {
   Database,
   Activity,
   Moon,
-  Star
+  Star,
+  Unlink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -263,6 +264,15 @@ export default function App() {
       window.open(url, 'google-fit-auth', `width=${width},height=${height},left=${left},top=${top}`);
     } catch (err) {
       console.error("Failed to get auth URL", err);
+    }
+  };
+
+  const handleDisconnectFit = async () => {
+    try {
+      await fetch('/api/fit/disconnect', { method: 'POST' });
+      setIsGoogleConnected(false);
+    } catch (err) {
+      console.error("Failed to disconnect Google Fit", err);
     }
   };
 
@@ -2245,6 +2255,17 @@ export default function App() {
                             {isSyncing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
                             {isGoogleConnected ? 'Sync Fit' : 'Connect Fit'}
                           </button>
+                          {isGoogleConnected && (
+                            <button 
+                              onClick={handleDisconnectFit}
+                              disabled={isSyncing}
+                              className="flex items-center gap-1.5 bg-rose-50 border border-rose-100 text-rose-600 px-3 py-3 rounded-xl font-bold text-xs hover:bg-rose-100 transition-all shadow-sm"
+                              title="Disconnect Google Fit"
+                            >
+                              <Unlink className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Disconnect</span>
+                            </button>
+                          )}
                         </div>
                       </motion.div>
                     </div>

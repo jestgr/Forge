@@ -122,6 +122,16 @@ app.get(["/auth/callback", "/auth/callback/"], async (req, res) => {
   }
 });
 
+// Disconnect Google Fit
+app.post("/api/fit/disconnect", (req, res) => {
+  res.clearCookie("google_fit_tokens", {
+    secure: true,
+    sameSite: "none",
+    httpOnly: true
+  });
+  res.json({ success: true });
+});
+
 // Get Google Fit Data
 app.get("/api/fit/sync", async (req, res) => {
   const tokenCookie = req.cookies.google_fit_tokens;
@@ -253,8 +263,28 @@ app.get("/api/fit/sync", async (req, res) => {
 
     const sessions = sessionsResponse.data.deletedSession ? [] : sessionsResponse.data.session || [];
 
-    // 3. For each session, fetch heart rate and calories
-    const detailedSessions = await Promise.all(sessions.map(async (session: any) => {
+    // Parse sleep durations from sessions (Activity type 72 is Sleep) as a robust backup
+    sessions.forEach((session: any) => {
+      const activityType = session.activityType;
+      const isSleep = activityType === 72 || String(activityType) === "72" || String(activityType).toLowerCase().includes("sleep");
+      if (isSleep) {
+        const sStart = parseInt(session.startTimeMillis);
+        const sEnd = parseInt(session.endTimeMillis);
+        const durationHours = (sEnd - sStart) / (1000 * 60 * 60);
+        const dateStr = new Date(sStart).toDateString();
+        dailySleepMap[dateStr] = parseFloat(Math.max(dailySleepMap[dateStr] || 0, durationHours).toFixed(1));
+      }
+    });
+
+    // Only process non-sleep active workouts for detailed calculations
+    const activeWorkoutSessions = sessions.filter((s: any) => {
+      const activityType = s.activityType;
+      const isSleep = activityType === 72 || String(activityType) === "72" || String(activityType).toLowerCase().includes("sleep");
+      return !isSleep;
+    });
+
+    // 3. For each workout session, fetch heart rate and calories
+    const detailedSessions = await Promise.all(activeWorkoutSessions.map(async (session: any) => {
       const sStart = parseInt(session.startTimeMillis);
       const sEnd = parseInt(session.endTimeMillis);
 
