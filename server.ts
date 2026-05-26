@@ -214,45 +214,35 @@ app.get("/api/fit/sync", async (req, res) => {
       console.warn("Heart Minutes fetch warning (may require profile sync/permissions):", e);
     }
 
-    // 1c. Fetch Sleep Segment (Bucket by Day)
+    // 1c. Fetch Sleep Segment (Raw Dataset - Sleep segment is not aggregateable via body)
     const dailySleepMap: { [dateStr: string]: number } = {};
     try {
+      const startNanosStr = startTimeMillis + "000000";
+      const endNanosStr = endTimeMillis + "000000";
+      const sleepDataSource = "derived:com.google.sleep.segment:com.google.android.gms:merged";
       const sleepResponse = await client.request({
-        url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
-        method: "POST",
-        data: {
-          aggregateBy: [{ dataTypeName: "com.google.sleep.segment" }],
-          bucketByTime: { durationMillis: 86400000 },
-          startTimeMillis,
-          endTimeMillis
-        }
+        url: `https://www.googleapis.com/fitness/v1/users/me/dataSources/${sleepDataSource}/datasets/${startNanosStr}-${endNanosStr}`,
+        method: "GET"
       }) as any;
 
-      if (sleepResponse.data.bucket) {
-        sleepResponse.data.bucket.forEach((bucket: any) => {
-          const date = new Date(parseInt(bucket.startTimeMillis));
-          const dateStr = date.toDateString();
-          let sleepMs = 0;
-          const dataset = bucket.dataset[0];
-          if (dataset && dataset.point) {
-            dataset.point.forEach((point: any) => {
-              const status = point.value[0]?.intVal;
-              // 1 = awake, 3 = out of bed. Only count 2, 4, 5, 6
-              if (status && status !== 1 && status !== 3) {
-                const startNanos = parseInt(point.startTimeNanos);
-                const endNanos = parseInt(point.endTimeNanos);
-                if (startNanos && endNanos) {
-                  sleepMs += (endNanos - startNanos) / 1000000;
-                }
-              }
-            });
+      if (sleepResponse.data && sleepResponse.data.point) {
+        sleepResponse.data.point.forEach((point: any) => {
+          const sleepStatus = point.value[0]?.intVal;
+          // sleepStatus: 1=Awake, 2=Sleep, 3=Out of bed, 4=Light, 5=Deep, 6=REM.
+          // Count only real sleep stages (2, 4, 5, 6)
+          if (sleepStatus && sleepStatus !== 1 && sleepStatus !== 3) {
+            const startMs = Math.round(parseInt(point.startTimeNanos) / 1000000);
+            const endMs = Math.round(parseInt(point.endTimeNanos) / 1000000);
+            if (startMs && endMs && endMs > startMs) {
+              const durationHours = (endMs - startMs) / (1000 * 60 * 60);
+              const dateStr = new Date(startMs).toDateString();
+              dailySleepMap[dateStr] = parseFloat(((dailySleepMap[dateStr] || 0) + durationHours).toFixed(1));
+            }
           }
-          // convert to hours
-          dailySleepMap[dateStr] = parseFloat((sleepMs / (1000 * 60 * 60)).toFixed(1));
         });
       }
-    } catch (e) {
-      console.warn("Sleep fetch warning (user might not have granted sleep scope yet):", e);
+    } catch (e: any) {
+      console.warn("Sleep dataset fetch warning (user might not have granted sleep scope or raw sleep data is missing):", e?.message || e);
     }
 
     // 2. Fetch Sessions (Workouts) for the range
