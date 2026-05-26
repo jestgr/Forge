@@ -50,7 +50,8 @@ const getOAuthClient = (req: any) => {
 const SCOPES = [
   "https://www.googleapis.com/auth/fitness.activity.read",
   "https://www.googleapis.com/auth/fitness.body.read",
-  "https://www.googleapis.com/auth/fitness.location.read"
+  "https://www.googleapis.com/auth/fitness.location.read",
+  "https://www.googleapis.com/auth/fitness.sleep.read"
 ];
 
 // Auth URL endpoint
@@ -161,12 +162,87 @@ app.get("/api/fit/sync", async (req, res) => {
         const date = new Date(parseInt(bucket.startTimeMillis));
         const dateStr = date.toDateString();
         let bucketSteps = 0;
-        if (bucket.dataset[0].point[0]) {
+        if (bucket.dataset && bucket.dataset[0] && bucket.dataset[0].point && bucket.dataset[0].point[0]) {
           bucketSteps = bucket.dataset[0].point[0].value[0].intVal || 0;
         }
         dailyStepsMap[dateStr] = bucketSteps;
         totalSteps += bucketSteps;
       });
+    }
+
+    // 1b. Fetch Heart Minutes/Points (Bucket by Day)
+    const dailyHeartPointsMap: { [dateStr: string]: number } = {};
+    try {
+      const heartPointsResponse = await client.request({
+        url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
+        method: "POST",
+        data: {
+          aggregateBy: [{ dataTypeName: "com.google.heart_minutes" }],
+          bucketByTime: { durationMillis: 86400000 },
+          startTimeMillis,
+          endTimeMillis
+        }
+      }) as any;
+
+      if (heartPointsResponse.data.bucket) {
+        heartPointsResponse.data.bucket.forEach((bucket: any) => {
+          const date = new Date(parseInt(bucket.startTimeMillis));
+          const dateStr = date.toDateString();
+          let hpVal = 0;
+          const dataset = bucket.dataset[0];
+          if (dataset && dataset.point) {
+            dataset.point.forEach((point: any) => {
+              if (point.value && point.value[0]) {
+                hpVal += point.value[0].fpVal || point.value[0].intVal || 0;
+              }
+            });
+          }
+          dailyHeartPointsMap[dateStr] = Math.round(hpVal);
+        });
+      }
+    } catch (e) {
+      console.warn("Heart Minutes fetch warning (may require profile sync/permissions):", e);
+    }
+
+    // 1c. Fetch Sleep Segment (Bucket by Day)
+    const dailySleepMap: { [dateStr: string]: number } = {};
+    try {
+      const sleepResponse = await client.request({
+        url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
+        method: "POST",
+        data: {
+          aggregateBy: [{ dataTypeName: "com.google.sleep.segment" }],
+          bucketByTime: { durationMillis: 86400000 },
+          startTimeMillis,
+          endTimeMillis
+        }
+      }) as any;
+
+      if (sleepResponse.data.bucket) {
+        sleepResponse.data.bucket.forEach((bucket: any) => {
+          const date = new Date(parseInt(bucket.startTimeMillis));
+          const dateStr = date.toDateString();
+          let sleepMs = 0;
+          const dataset = bucket.dataset[0];
+          if (dataset && dataset.point) {
+            dataset.point.forEach((point: any) => {
+              const status = point.value[0]?.intVal;
+              // 1 = awake, 3 = out of bed. Only count 2, 4, 5, 6
+              if (status && status !== 1 && status !== 3) {
+                const startNanos = parseInt(point.startTimeNanos);
+                const endNanos = parseInt(point.endTimeNanos);
+                if (startNanos && endNanos) {
+                  sleepMs += (endNanos - startNanos) / 1000000;
+                }
+              }
+            });
+          }
+          // convert to hours
+          dailySleepMap[dateStr] = parseFloat((sleepMs / (1000 * 60 * 60)).toFixed(1));
+        });
+      }
+    } catch (e) {
+      console.warn("Sleep fetch warning (user might not have granted sleep scope yet):", e);
     }
 
     // 2. Fetch Sessions (Workouts) for the range
@@ -229,6 +305,8 @@ app.get("/api/fit/sync", async (req, res) => {
     res.json({
       steps: totalSteps,
       dailyStepsMap,
+      dailySleepMap,
+      dailyHeartPointsMap,
       workouts: detailedSessions
     });
   } catch (error) {

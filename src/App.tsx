@@ -52,7 +52,9 @@ import {
   Download,
   Upload,
   Database,
-  Activity
+  Activity,
+  Moon,
+  Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -166,6 +168,8 @@ export default function App() {
   
   // Daily Steps Tracking
   const [dailySteps, setDailySteps] = useState<{ [dateKey: string]: number }>({});
+  const [dailySleep, setDailySleep] = useState<{ [dateKey: string]: number }>({});
+  const [dailyHeartPoints, setDailyHeartPoints] = useState<{ [dateKey: string]: number }>({});
   const [showStepLogger, setShowStepLogger] = useState(false);
   const [stepInput, setStepInput] = useState('');
   
@@ -178,6 +182,8 @@ export default function App() {
         setCustomExercises(parsed.customExercises || []);
         setHistory(parsed.history || []);
         setDailySteps(parsed.dailySteps || {});
+        setDailySleep(parsed.dailySleep || {});
+        setDailyHeartPoints(parsed.dailyHeartPoints || {});
         setActivePlanId(parsed.activePlanId || null);
         setPlanStartDate(parsed.planStartDate || null);
         if (parsed.activeSession) {
@@ -199,11 +205,13 @@ export default function App() {
       customExercises,
       history,
       dailySteps,
+      dailySleep,
+      dailyHeartPoints,
       activePlanId,
       planStartDate
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [session, customExercises, history, dailySteps, activePlanId, planStartDate]);
+  }, [session, customExercises, history, dailySteps, dailySleep, dailyHeartPoints, activePlanId, planStartDate]);
 
   // Timers Effect
   useEffect(() => {
@@ -285,6 +293,16 @@ export default function App() {
         // Fallback for today if map is missing
         const todayKey = new Date().toDateString();
         setDailySteps(prev => ({ ...prev, [todayKey]: data.steps }));
+      }
+      
+      // Update sleep using the daily map
+      if (data.dailySleepMap) {
+        setDailySleep(prev => ({ ...prev, ...data.dailySleepMap }));
+      }
+
+      // Update heart points using the daily map
+      if (data.dailyHeartPointsMap) {
+        setDailyHeartPoints(prev => ({ ...prev, ...data.dailyHeartPointsMap }));
       }
       
       // Matching Logic
@@ -913,7 +931,22 @@ export default function App() {
       });
     });
 
-    // Heatmap: Last 28 days
+    // Calculate weekly steps and heart points of this week
+    let weeklyStepsSum = 0;
+    let weeklyHeartPointsSum = 0;
+    const dayKeys = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startOfWeek);
+      d.setDate(startOfWeek.getDate() + i);
+      dayKeys.push(d.toDateString());
+    }
+    dayKeys.forEach(key => {
+      weeklyStepsSum += dailySteps[key] || 0;
+      weeklyHeartPointsSum += dailyHeartPoints[key] || 0;
+    });
+    const weeklyStepsDistance = weeklyStepsSum * 0.000473; // ~2.5 ft per step
+
+    // Heatmap: Last 28 days - adjusted based on all physical health metrics!
     const heatmap = [];
     for (let i = 27; i >= 0; i--) {
       const d = new Date();
@@ -921,7 +954,13 @@ export default function App() {
       const ds = d.toDateString();
       const hasWorkout = history.some(s => new Date(s.startTime).toDateString() === ds);
       const hasSteps = (dailySteps[ds] || 0) >= 5000;
-      heatmap.push({ date: d, active: hasWorkout || hasSteps });
+      const hasSleep = (dailySleep[ds] || 0) >= 7;
+      const hasHeartPoints = (dailyHeartPoints[ds] || 0) >= 10;
+      
+      heatmap.push({ 
+        date: d, 
+        active: hasWorkout || hasSteps || hasSleep || hasHeartPoints 
+      });
     }
 
     let totalCardioSets = 0;
@@ -957,8 +996,14 @@ export default function App() {
       }
     }, 0);
 
+    const finalWeeklyDistance = weeklyDistance + weeklyStepsDistance;
     const avgHeartRate = totalCardioSets > 0 ? Math.round(sumHeartRate / totalCardioSets) : 0;
-    const avgSpeed = totalCardioTime > 0 ? (weeklyDistance / (totalCardioTime / 3600)) : 0;
+    
+    // Estimate walking time from steps at a modest pace (3 mph) if no cardio sets exist
+    const walkingTimeSeconds = (weeklyStepsDistance / 3.0) * 3600;
+    const finalCardioTime = totalCardioTime > 0 ? totalCardioTime : walkingTimeSeconds;
+
+    const avgSpeed = finalCardioTime > 0 ? (finalWeeklyDistance / (finalCardioTime / 3600)) : 0;
     const efficiencyRatio = (avgHeartRate > 0 && avgSpeed > 0) ? (avgSpeed / avgHeartRate * 100).toFixed(2) : '0.00';
 
     const lastCardioSession = history.find(s => 
@@ -968,7 +1013,19 @@ export default function App() {
     const daysSinceCardio = lastCardioSession ? Math.floor((Date.now() - lastCardioSession.startTime) / (1000 * 60 * 60 * 24)) : 99;
     const shouldSuggestVO2 = daysSinceCardio > 4;
 
-    return { weeklyVolume, weeklyDistance, avgHeartRate, avgSpeed, efficiencyRatio, prs, heatmap, daysSinceCardio, shouldSuggestVO2 };
+    return { 
+      weeklyVolume, 
+      weeklyDistance: finalWeeklyDistance, 
+      avgHeartRate, 
+      avgSpeed, 
+      efficiencyRatio, 
+      prs, 
+      heatmap, 
+      daysSinceCardio, 
+      shouldSuggestVO2, 
+      weeklyHeartPointsSum, 
+      weeklyStepsSum 
+    };
   };
 
   const getAIAdvice = async (ex: ActiveExercise) => {
@@ -1026,6 +1083,8 @@ export default function App() {
   const DaySummaryModal = ({ dateStr, onClose }: { dateStr: string, onClose: () => void }) => {
     const sessionsOnDay = history.filter(s => new Date(s.startTime).toDateString() === dateStr);
     const stepsOnDay = dailySteps[dateStr] || 0;
+    const sleepOnDay = dailySleep[dateStr] || 0;
+    const heartPointsOnDay = dailyHeartPoints[dateStr] || 0;
     const date = new Date(dateStr);
 
     return (
@@ -1046,20 +1105,61 @@ export default function App() {
           </div>
           
           <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
-            {/* Steps Card */}
-            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-5 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-white rounded-xl text-indigo-600 shadow-sm">
-                  <Activity className="w-5 h-5" />
+            {/* Grid of Metrics */}
+            <div className="space-y-4">
+              {/* Steps Card */}
+              <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-white rounded-xl text-indigo-600 shadow-sm">
+                    <Activity className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest mb-0.5">Total Movement</p>
+                    <p className="text-xl font-black text-slate-900">{stepsOnDay.toLocaleString()} <span className="text-xs font-bold text-slate-400">steps</span></p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-0.5">Total Movement</p>
-                  <p className="text-2xl font-black text-slate-900">{stepsOnDay.toLocaleString()} <span className="text-xs font-bold text-slate-400">steps</span></p>
+                <div className="text-right">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase">Goal (7k)</p>
+                  <p className={`text-xs font-black ${stepsOnDay >= 7000 ? 'text-green-600' : 'text-slate-500'}`}>{stepsOnDay >= 7000 ? 'Target Met' : `${Math.round((stepsOnDay/7000)*100)}%`}</p>
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Goal</p>
-                <p className={`text-xs font-black ${stepsOnDay >= 10000 ? 'text-green-600' : 'text-slate-500'}`}>{Math.round((stepsOnDay/10000)*100)}%</p>
+
+              {/* Sleep Card */}
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-white rounded-xl text-blue-600 shadow-sm">
+                    <Moon className="w-4 h-4 fill-current text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-0.5">Sleep Duration</p>
+                    <p className="text-xl font-black text-slate-900">{sleepOnDay > 0 ? `${sleepOnDay} ` : '-- '}<span className="text-xs font-bold text-slate-400">hours</span></p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase">Target (7-9 h)</p>
+                  <p className={`text-xs font-black ${sleepOnDay >= 7 && sleepOnDay <= 9 ? 'text-green-600' : 'text-slate-500'}`}>
+                    {sleepOnDay >= 7 && sleepOnDay <= 9 ? 'Target Met 🌙' : sleepOnDay > 0 ? 'Off Target' : 'No Data'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Heart Points Card */}
+              <div className="bg-yellow-50 border border-yellow-100 rounded-2xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-white rounded-xl text-yellow-600 shadow-sm">
+                    <Star className="w-4 h-4 fill-current text-yellow-500" />
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black text-yellow-600 uppercase tracking-widest mb-0.5">Heart Points</p>
+                    <p className="text-xl font-black text-slate-900">{heartPointsOnDay} <span className="text-xs font-bold text-slate-400">points</span></p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase">Daily Goal (20 pts)</p>
+                  <p className={`text-xs font-black ${heartPointsOnDay >= 20 ? 'text-green-600' : 'text-slate-500'}`}>
+                    {heartPointsOnDay >= 20 ? 'Goal Achieved! ⭐' : `${Math.round((heartPointsOnDay/20)*100)}%`}
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -1349,7 +1449,16 @@ export default function App() {
         const dateStr = date.toDateString();
         const sessionsOnDay = history.filter(s => new Date(s.startTime).toDateString() === dateStr);
         const stepsOnDay = dailySteps[dateStr] || 0;
+        const sleepHoursOnDay = dailySleep[dateStr] || 0;
+        const hpOnDay = dailyHeartPoints[dateStr] || 0;
         const isToday = new Date().toDateString() === dateStr;
+
+        const hasHeavy = sessionsOnDay.some(s => getBucketForSession(s) === 'Heavy');
+        const hasZone2 = sessionsOnDay.some(s => getBucketForSession(s) === 'Zone 2');
+        const hasHIIT = sessionsOnDay.some(s => getBucketForSession(s) === 'HIIT');
+        const hasSteps = stepsOnDay >= 7000;
+        const hasSleep = sleepHoursOnDay >= 7 && sleepHoursOnDay <= 9;
+        const hasHeartPoints = hpOnDay >= 20;
 
         days.push(
           <div 
@@ -1381,7 +1490,7 @@ export default function App() {
             </div>
             
             <div className="mt-1 space-y-0.5">
-              {sessionsOnDay.slice(0, 2).map(s => (
+              {sessionsOnDay.slice(0, 1).map(s => (
                 <div 
                   key={s.id}
                   className={`text-[6px] font-bold text-white px-1 py-0.5 rounded truncate leading-none ${getSplitColor(s.type)}`}
@@ -1389,7 +1498,41 @@ export default function App() {
                   {s.type.split('/')[0]}
                 </div>
               ))}
-              {sessionsOnDay.length > 2 && <p className="text-[6px] text-slate-300 font-bold">+{sessionsOnDay.length - 2} more</p>}
+              {sessionsOnDay.length > 1 && <p className="text-[6px] text-slate-300 font-bold">+{sessionsOnDay.length - 1} more</p>}
+            </div>
+
+            {/* Daily Accomplishment Icons */}
+            <div className="absolute bottom-1.5 left-2 flex items-center gap-0.5">
+              {hasHeavy && (
+                <div title="Heavy Block Met" className="w-3.5 h-3.5 bg-amber-50 text-amber-600 rounded flex items-center justify-center">
+                  <Dumbbell className="w-2.5 h-2.5" />
+                </div>
+              )}
+              {hasZone2 && (
+                <div title="Zone 2 Block Met" className="w-3.5 h-3.5 bg-rose-50 text-rose-600 rounded flex items-center justify-center">
+                  <Heart className="w-2.5 h-2.5 fill-current" />
+                </div>
+              )}
+              {hasHIIT && (
+                <div title="HIIT Block Met" className="w-3.5 h-3.5 bg-yellow-50 text-yellow-600 rounded flex items-center justify-center">
+                  <Zap className="w-2.5 h-2.5 fill-current" />
+                </div>
+              )}
+              {hasSteps && (
+                <div title="Steps Goal Met" className="w-3.5 h-3.5 bg-indigo-50 text-indigo-600 rounded flex items-center justify-center">
+                  <Activity className="w-2.5 h-2.5" />
+                </div>
+              )}
+              {hasSleep && (
+                <div title="Sleep Goal Met" className="w-3.5 h-3.5 bg-blue-50 text-blue-600 rounded flex items-center justify-center">
+                  <Moon className="w-2.5 h-2.5 fill-current" />
+                </div>
+              )}
+              {hasHeartPoints && (
+                <div title="Heart Points Goal Met" className="w-3.5 h-3.5 bg-emerald-50 text-emerald-600 rounded flex items-center justify-center">
+                  <Star className="w-2.5 h-2.5 fill-current" />
+                </div>
+              )}
             </div>
           </div>
         );
@@ -1420,6 +1563,34 @@ export default function App() {
               {calendarMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
             </span>
             <button onClick={nextMonth} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 disabled:opacity-30" disabled={calendarMonth >= new Date()}><ChevronRight className="w-4 h-4" /></button>
+          </div>
+        </div>
+
+        {/* Metric Legend */}
+        <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-wrap gap-x-6 gap-y-2 justify-center text-[10px] text-slate-500 font-bold">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-amber-50 text-amber-600 rounded flex items-center justify-center"><Dumbbell className="w-2.5 h-2.5" /></div>
+            <span>Heavy (30m+ Lift)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-rose-50 text-rose-600 rounded flex items-center justify-center"><Heart className="w-2.5 h-2.5 fill-current animate-pulse" /></div>
+            <span>Zone 2 (45m+ Cardio)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-yellow-50 text-yellow-600 rounded flex items-center justify-center"><Zap className="w-2.5 h-2.5 fill-current" /></div>
+            <span>HIIT (15-40m Cardio)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-indigo-50 text-indigo-600 rounded flex items-center justify-center"><Activity className="w-2.5 h-2.5" /></div>
+            <span>Steps (7k+ Goal)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-blue-50 text-blue-600 rounded flex items-center justify-center"><Moon className="w-2.5 h-2.5 fill-current" /></div>
+            <span>Sleep (7-9h Target)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-emerald-50 text-emerald-600 rounded flex items-center justify-center"><Star className="w-2.5 h-2.5 fill-current" /></div>
+            <span>Heart Points (20+ Goal)</span>
           </div>
         </div>
 
@@ -2126,23 +2297,6 @@ export default function App() {
                         <motion.div 
                           initial={{ opacity: 0, x: 20 }}
                           animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.1 }}
-                          className="bg-white border border-slate-100 rounded-[2rem] p-6 shadow-xl shadow-slate-100"
-                        >
-                          <div className="flex justify-between items-center mb-4">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Weekly Volume</span>
-                            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><TrendingUp className="w-4 h-4" /></div>
-                          </div>
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-3xl font-black text-slate-900">{insights.weeklyVolume.toLocaleString()}</span>
-                            <span className="text-xs font-bold text-slate-400 uppercase">lb moved</span>
-                          </div>
-                          <p className="text-[10px] text-slate-400 mt-2 font-medium italic">Total cumulative weight across all resistance blocks this week.</p>
-                        </motion.div>
-
-                        <motion.div 
-                          initial={{ opacity: 0, x: 20 }}
-                          animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: 0.15 }}
                           className="bg-white border border-slate-100 rounded-[2rem] p-6 shadow-xl shadow-slate-100"
                         >
@@ -2171,8 +2325,22 @@ export default function App() {
                                 <p className="text-sm font-black text-emerald-600">{insights.avgSpeed > 0 ? `${insights.avgSpeed.toFixed(1)} mph` : '--'}</p>
                               </div>
                             </div>
+
+                            {/* Google Fit Heart Points metrics */}
+                            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                              <div className="flex justify-between items-center mb-1.5">
+                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.1em]">Google Heart Points</p>
+                                <span className="text-[10px] font-black text-slate-800">{insights.weeklyHeartPointsSum} / 150 HP</span>
+                              </div>
+                              <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                <div 
+                                  className="bg-yellow-500 h-1.5 rounded-full transition-all duration-500" 
+                                  style={{ width: `${Math.min((insights.weeklyHeartPointsSum / 150) * 100, 100)}%` }} 
+                                />
+                              </div>
+                            </div>
                           </div>
-                          <p className="text-[10px] text-slate-400 mt-3 font-medium italic">Efficiency Index: Tracking your heart rate vs output (speed/weight) over 12 weeks.</p>
+                          <p className="text-[10px] text-slate-400 mt-3 font-medium italic">Efficiency Index: Combines structured cardio output + step-movement equivalent and active intensity heart points metrics.</p>
                         </motion.div>
 
                         <motion.div 
