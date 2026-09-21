@@ -5,9 +5,14 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+function getAiClient() {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY is not set.");
+  return new GoogleGenAI({ apiKey: key });
+}
 
 export async function generateWorkout(goal: string, time: number) {
+  const ai = getAiClient();
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Generate a workout routine for "${goal}" that takes approximately ${time} minutes.`,
