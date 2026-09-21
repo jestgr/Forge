@@ -52,6 +52,8 @@ export interface ActiveExercise {
   videoUrl?: string;
 }
 
+export type FitnessBucket = 'Heavy' | 'Zone 2' | 'HIIT' | 'Other';
+
 export interface WorkoutSession {
   id: string;
   name: string;
@@ -66,6 +68,7 @@ export interface WorkoutSession {
   avgHeartRate?: number;
   distance?: number;
   googleFitSessionId?: string;
+  fitnessBucket?: FitnessBucket;
 }
 
 export interface PlanSession {

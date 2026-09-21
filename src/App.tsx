@@ -55,7 +55,10 @@ import {
   Activity,
   Moon,
   Star,
-  Unlink
+  Unlink,
+  Edit,
+  Shuffle,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -66,15 +69,25 @@ import {
   ActiveExercise, 
   WorkoutSet, 
   EquipmentMode, 
-  ExerciseCategory,
-  TrackingField,
-  SessionType,
-  ProgressionPlan
+  ExerciseCategory, 
+  TrackingField, 
+  SessionType, 
+  ProgressionPlan,
+  FitnessBucket
 } from './types';
 
 // Storage keys
 const STORAGE_KEY = 'forge_workout_state';
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const getAiClient = () => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return null;
+  try {
+    return new GoogleGenAI({ apiKey: key });
+  } catch (e) {
+    console.warn("Could not initialize GoogleGenAI:", e);
+    return null;
+  }
+};
 
 const SESSION_TYPES = [
   'Lower Body',
@@ -88,6 +101,17 @@ const TRACKING_FIELDS: TrackingField[] = ['Weight', 'Reps', 'Time', 'Speed', 'In
 
 const isMobile = () => typeof window !== 'undefined' && window.innerWidth < 768;
 
+function shuffleArray<T>(array: T[]): T[] {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const temp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = temp;
+  }
+  return arr;
+}
+
 export default function App() {
   // Global State
   const [session, setSession] = useState<WorkoutSession | null>(null);
@@ -95,6 +119,8 @@ export default function App() {
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [planStartDate, setPlanStartDate] = useState<number | null>(null);
   const [customExercises, setCustomExercises] = useState<ExerciseTemplate[]>([]);
+  const [exerciseOverrides, setExerciseOverrides] = useState<Record<string, Partial<ExerciseTemplate>>>({});
+  const [deletedExerciseIds, setDeletedExerciseIds] = useState<string[]>([]);
   const [history, setHistory] = useState<WorkoutSession[]>([]);
   
   // UI State
@@ -102,7 +128,9 @@ export default function App() {
   const [selectedType, setSelectedType] = useState<typeof SESSION_TYPES[number]>('Lower Body');
   const [includeCardio, setIncludeCardio] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [showLibraryManager, setShowLibraryManager] = useState(false);
   const [showAddCustom, setShowAddCustom] = useState(false);
+  const [editingExercise, setEditingExercise] = useState<ExerciseTemplate | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [swappingExId, setSwappingExId] = useState<string | null>(null);
   const [addingToCategory, setAddingToCategory] = useState<ExerciseCategory | null>(null);
@@ -113,6 +141,16 @@ export default function App() {
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [aiAdvice, setAiAdvice] = useState<{ [exId: string]: string }>({});
   const [isAnalyzing, setIsAnalyzing] = useState<{ [exId: string]: boolean }>({});
+
+  // Library Drawer Filter State
+  const [drawerSplitFilter, setDrawerSplitFilter] = useState<'Current' | 'All' | SessionType>('Current');
+  const [drawerCategoryFilter, setDrawerCategoryFilter] = useState<'All' | ExerciseCategory>('All');
+  const [drawerSearch, setDrawerSearch] = useState('');
+
+  // Library Manager Filter State
+  const [mgrCategoryFilter, setMgrCategoryFilter] = useState<'All' | ExerciseCategory>('All');
+  const [mgrSplitFilter, setMgrSplitFilter] = useState<'All' | SessionType>('All');
+  const [mgrSearch, setMgrSearch] = useState('');
   
   // Google Fit Integration State
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
@@ -164,6 +202,11 @@ export default function App() {
   const [newExCategory, setNewExCategory] = useState<ExerciseCategory>('Resistance');
   const [newExFields, setNewExFields] = useState<TrackingField[]>(['Weight', 'Reps']);
   const [newExSplits, setNewExSplits] = useState<SessionType[]>([]);
+  const [newExEquipment, setNewExEquipment] = useState<EquipmentMode[]>(['Full Gym', 'Travel', 'Bodyweight']);
+  const [newExSets, setNewExSets] = useState<number>(3);
+  const [newExReps, setNewExReps] = useState<number | string>(10);
+  const [newExRest, setNewExRest] = useState<number>(60);
+  const [newExDuration, setNewExDuration] = useState<number>(0);
   const [newExNotes, setNewExNotes] = useState('');
   const [newExVideoUrl, setNewExVideoUrl] = useState('');
   
@@ -181,6 +224,8 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         setCustomExercises(parsed.customExercises || []);
+        setExerciseOverrides(parsed.exerciseOverrides || {});
+        setDeletedExerciseIds(parsed.deletedExerciseIds || []);
         setHistory(parsed.history || []);
         setDailySteps(parsed.dailySteps || {});
         setDailySleep(parsed.dailySleep || {});
@@ -204,6 +249,8 @@ export default function App() {
     const state = {
       activeSession: session,
       customExercises,
+      exerciseOverrides,
+      deletedExerciseIds,
       history,
       dailySteps,
       dailySleep,
@@ -212,7 +259,7 @@ export default function App() {
       planStartDate
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [session, customExercises, history, dailySteps, dailySleep, dailyHeartPoints, activePlanId, planStartDate]);
+  }, [session, customExercises, exerciseOverrides, deletedExerciseIds, history, dailySteps, dailySleep, dailyHeartPoints, activePlanId, planStartDate]);
 
   // Timers Effect
   useEffect(() => {
@@ -365,8 +412,11 @@ export default function App() {
     }
   };
 
-  const importUnmatchedWorkout = (workout: any, bucket: 'Heavy' | 'Zone 2' | 'HIIT') => {
-    const sessionType: SessionType = bucket === 'Heavy' ? 'Lower Body' : 'Pure Cardio';
+  const importUnmatchedWorkout = (workout: any, bucket: FitnessBucket) => {
+    let sessionType: SessionType = 'Pure Cardio';
+    if (bucket === 'Heavy') {
+      sessionType = 'Lower Body';
+    }
     
     // Check if duplicate
     if (history.some(h => h.googleFitSessionId === workout.id)) {
@@ -376,7 +426,7 @@ export default function App() {
 
     const newSession: WorkoutSession = {
       id: `gf_${workout.id}_${Date.now()}`,
-      name: `Synced: ${workout.name || 'Workout'}`,
+      name: `Synced: ${workout.name || workout.activityTypeName || 'Workout'}`,
       type: sessionType,
       hasCardio: bucket !== 'Heavy',
       startTime: workout.startTime,
@@ -387,7 +437,8 @@ export default function App() {
       avgHeartRate: workout.avgHeartRate,
       distance: workout.distance,
       googleFitSessionId: workout.id,
-      estimatedDuration: Math.round((workout.endTime - workout.startTime) / 60000)
+      estimatedDuration: Math.round((workout.endTime - workout.startTime) / 60000),
+      fitnessBucket: bucket
     };
 
     setHistory([newSession, ...history]);
@@ -409,32 +460,28 @@ export default function App() {
             }
             return prev - 1;
           });
-        } else {
-          if (isResting) setRestSeconds(prev => prev + 1);
+        }
+
+        if (isResting && intervalMode === 'none') {
+          setRestSeconds(prev => prev + 1);
         }
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [timerRunning, isResting, intervalMode, intervalSegment]);
+  }, [timerRunning, intervalMode, isResting]);
 
   const handleNextIntervalSegment = () => {
     if (intervalMode === 'fallback') {
-      const isCurrentlyWork = intervalTimeLeft === 0 || intervalTimeLeft > 0; // Simplified for finding next
-      // Sequence: Work (45s) -> Transition (15s) -> Work ...
-      // In fallback, we have 6 segments. Each segment has 45s work + 15s rest.
-      // So 12 sub-segments: Work, Rest, Work, Rest ...
-      
-      const newSegment = intervalSegment + 1;
-      if (newSegment >= 12) {
-        // Workout finished
+      const nextSegment = intervalSegment + 1;
+      if (nextSegment >= FALLBACK_MOVEMENTS.length * 2) {
+        // Workout Finished! Prompt repeat
         setTimerRunning(false);
         setShowRepeatDialog(true);
         return;
       }
-      
-      const isRest = newSegment % 2 !== 0;
-      setIntervalSegment(newSegment);
-      setIntervalTimeLeft(isRest ? 15 : 45);
+      setIntervalSegment(nextSegment);
+      // Even segments are work (45s), odd segments are rest/transition (15s)
+      setIntervalTimeLeft(nextSegment % 2 === 0 ? 45 : 15);
     } else if (intervalMode === '4x4') {
       const newSegment = intervalSegment + 1;
       if (newSegment >= VO2_MAX_SEGMENTS.length) {
@@ -465,7 +512,12 @@ export default function App() {
     setCurrentView('Dashboard');
   };
 
-  const allTemplates = useMemo(() => [...BASE_EXERCISES, ...customExercises], [customExercises]);
+  const allTemplates = useMemo<ExerciseTemplate[]>(() => {
+    const base: ExerciseTemplate[] = BASE_EXERCISES
+      .filter(t => !deletedExerciseIds.includes(t.id))
+      .map(t => (exerciseOverrides[t.id] ? { ...t, ...exerciseOverrides[t.id] } : t));
+    return [...base, ...customExercises];
+  }, [customExercises, exerciseOverrides, deletedExerciseIds]);
 
   const getCurrentPlanDetails = () => {
     if (!activePlanId || !planStartDate) return null;
@@ -478,6 +530,42 @@ export default function App() {
     
     if (weekIndex >= plan.durationWeeks) return null;
     return { plan, weekIndex, weekData: plan.weeks[weekIndex] };
+  };
+
+  const rerollResistanceExercises = () => {
+    if (!session) return;
+    const candidates = allTemplates.filter(t => t.equipment.includes(equipmentMode));
+    const splitFilter = (t: ExerciseTemplate) => {
+      if (!t.targetSplits || t.targetSplits.includes('All')) return true;
+      if (t.category !== 'Resistance') return true; 
+      return t.targetSplits.includes(session.type);
+    };
+    const resTemplates: ExerciseTemplate[] = candidates.filter(t => t.category === 'Resistance' && splitFilter(t));
+    const currentResCount = session.exercises.filter(e => e.category === 'Resistance').length || 4;
+    const picked: ExerciseTemplate[] = shuffleArray<ExerciseTemplate>(resTemplates).slice(0, currentResCount);
+    const newResExercises: ActiveExercise[] = picked.map((t: ExerciseTemplate) => ({
+      id: Math.random().toString(36).substr(2, 9),
+      templateId: t.id,
+      name: t.name,
+      category: t.category,
+      targetSets: t.suggestedSets || 3,
+      targetReps: t.suggestedReps,
+      targetDuration: t.suggestedDuration,
+      targetRest: t.suggestedRest,
+      notes: t.notes,
+      videoUrl: t.videoUrl,
+      sets: []
+    }));
+    
+    const nonRes = session.exercises.filter(e => e.category !== 'Resistance');
+    const mobility = nonRes.filter(e => e.category === 'Mobility');
+    const posture = nonRes.filter(e => e.category === 'Posture');
+    const cardio = nonRes.filter(e => e.category === 'Cardio');
+
+    setSession({
+      ...session,
+      exercises: [...mobility, ...posture, ...newResExercises, ...cardio]
+    });
   };
 
   const startNewSession = (type: SessionType, hasCardio: boolean) => {
@@ -529,11 +617,13 @@ export default function App() {
       cardioCount = 3;
     }
     
-    const resTemplates = candidates.filter(t => t.category === 'Resistance' && splitFilter(t));
-    const cardTemplates = candidates.filter(t => t.category === 'Cardio' && splitFilter(t));
+    const resTemplates: ExerciseTemplate[] = candidates.filter(t => t.category === 'Resistance' && splitFilter(t));
+    const cardTemplates: ExerciseTemplate[] = candidates.filter(t => t.category === 'Cardio' && splitFilter(t));
     
-    let resistance = resTemplates.slice(0, resistanceCount);
-    let cardio = cardTemplates.slice(0, cardioCount);
+    // Randomize resistance choices so different movements appear each time!
+    const randomizedRes: ExerciseTemplate[] = shuffleArray<ExerciseTemplate>(resTemplates);
+    let resistance: ExerciseTemplate[] = randomizedRes.slice(0, resistanceCount);
+    let cardio: ExerciseTemplate[] = cardTemplates.slice(0, cardioCount);
 
     // Integrate plan exercises
     if (planExercises.length > 0) {
@@ -708,29 +798,126 @@ export default function App() {
     setShowLibrary(false);
   };
 
-  const handleCreateCustom = () => {
-    if (!newExName) return;
-    const newTemplate: ExerciseTemplate = {
-      id: `custom_${Date.now()}`,
-      name: newExName,
-      category: newExCategory,
-      targetSplits: newExSplits.length > 0 ? newExSplits : ['All'],
-      equipment: ['Full Gym', 'Travel', 'Bodyweight'], 
-      trackingFields: newExFields,
-      notes: newExNotes,
-      videoUrl: newExVideoUrl
-    };
-    setCustomExercises([...customExercises, newTemplate]);
+  const startNewExercise = () => {
+    setEditingExercise(null);
+    setNewExName('');
+    setNewExCategory('Resistance');
+    setNewExFields(['Weight', 'Reps']);
+    setNewExSplits([]);
+    setNewExEquipment(['Full Gym', 'Travel', 'Bodyweight']);
+    setNewExSets(3);
+    setNewExReps(10);
+    setNewExRest(60);
+    setNewExDuration(0);
+    setNewExNotes('');
+    setNewExVideoUrl('');
+    setShowAddCustom(true);
+  };
+
+  const startEditExercise = (ex: ExerciseTemplate) => {
+    setEditingExercise(ex);
+    setNewExName(ex.name);
+    setNewExCategory(ex.category);
+    setNewExFields([...ex.trackingFields]);
+    setNewExSplits(ex.targetSplits?.filter((s): s is SessionType => s !== 'All') || []);
+    setNewExEquipment([...ex.equipment]);
+    setNewExSets(ex.suggestedSets || 3);
+    setNewExReps(ex.suggestedReps !== undefined ? ex.suggestedReps : 10);
+    setNewExRest(ex.suggestedRest || 60);
+    setNewExDuration(ex.suggestedDuration || 0);
+    setNewExNotes(ex.notes || '');
+    setNewExVideoUrl(ex.videoUrl || '');
+    setShowAddCustom(true);
+  };
+
+  const handleSaveCustomExercise = () => {
+    if (!newExName.trim()) return;
+
+    if (editingExercise) {
+      const updated: ExerciseTemplate = {
+        ...editingExercise,
+        name: newExName.trim(),
+        category: newExCategory,
+        trackingFields: newExFields.length > 0 ? newExFields : ['Reps'],
+        targetSplits: newExSplits.length > 0 ? newExSplits : ['All'],
+        equipment: newExEquipment.length > 0 ? newExEquipment : ['Full Gym', 'Travel', 'Bodyweight'],
+        suggestedSets: newExSets,
+        suggestedReps: newExReps,
+        suggestedRest: newExRest,
+        suggestedDuration: newExDuration,
+        notes: newExNotes.trim() || undefined,
+        videoUrl: newExVideoUrl.trim() || undefined
+      };
+
+      if (editingExercise.id.startsWith('custom_')) {
+        setCustomExercises(prev => prev.map(e => e.id === editingExercise.id ? updated : e));
+      } else {
+        setExerciseOverrides(prev => ({
+          ...prev,
+          [editingExercise.id]: updated
+        }));
+      }
+    } else {
+      const newTemplate: ExerciseTemplate = {
+        id: `custom_${Date.now()}`,
+        name: newExName.trim(),
+        category: newExCategory,
+        targetSplits: newExSplits.length > 0 ? newExSplits : ['All'],
+        equipment: newExEquipment.length > 0 ? newExEquipment : ['Full Gym', 'Travel', 'Bodyweight'], 
+        trackingFields: newExFields.length > 0 ? newExFields : ['Reps'],
+        suggestedSets: newExSets,
+        suggestedReps: newExReps,
+        suggestedRest: newExRest,
+        suggestedDuration: newExDuration,
+        notes: newExNotes.trim() || undefined,
+        videoUrl: newExVideoUrl.trim() || undefined
+      };
+      setCustomExercises(prev => [...prev, newTemplate]);
+    }
+
     setNewExName('');
     setNewExSplits([]);
     setNewExNotes('');
     setNewExVideoUrl('');
+    setEditingExercise(null);
     setShowAddCustom(false);
+  };
+
+  const handleDeleteExercise = (ex: ExerciseTemplate) => {
+    if (window.confirm(`Are you sure you want to delete "${ex.name}" from your exercise library?`)) {
+      if (ex.id.startsWith('custom_')) {
+        setCustomExercises(prev => prev.filter(e => e.id !== ex.id));
+      } else {
+        setDeletedExerciseIds(prev => [...prev, ex.id]);
+      }
+    }
+  };
+
+  const handleRestoreBaseExercise = (id: string) => {
+    setDeletedExerciseIds(prev => prev.filter(eId => eId !== id));
+    setExerciseOverrides(prev => {
+      const copy = { ...prev };
+      delete copy[id];
+      return copy;
+    });
+  };
+
+  const handleRestoreAllDefaults = () => {
+    if (window.confirm("Restore all built-in exercises to their original defaults? (Your custom exercises will be kept)")) {
+      setExerciseOverrides({});
+      setDeletedExerciseIds([]);
+    }
   };
 
   const finishSession = () => {
     if (!session) return;
-    const completed = { ...session, status: 'completed' as const, endTime: Date.now() };
+    const bucket = getBucketForSession(session);
+    const completed = { 
+      ...session, 
+      status: 'completed' as const, 
+      endTime: Date.now(),
+      fitnessBucket: session.fitnessBucket || bucket
+    };
     setHistory([completed, ...history]);
     setSession(null);
     setTimerRunning(false);
@@ -861,6 +1048,7 @@ export default function App() {
 
     // 1. Heavy Lifts: 2 sessions, 30-45 min
     const heavyLifts = weeklySessions.filter(s => {
+      if (s.fitnessBucket) return s.fitnessBucket === 'Heavy';
       const isLift = ['Lower Body', 'Chest/Shoulders', 'Back/Biceps'].includes(s.type);
       const duration = s.endTime ? (s.endTime - s.startTime) / 60000 : 0;
       return isLift && duration >= 30;
@@ -868,6 +1056,7 @@ export default function App() {
 
     // 2. Zone 2 Cardio: 2-3 sessions, 50-60 min
     const zone2Sessions = weeklySessions.filter(s => {
+      if (s.fitnessBucket) return s.fitnessBucket === 'Zone 2';
       const isCardio = s.type === 'Pure Cardio' || s.hasCardio;
       const duration = s.endTime ? (s.endTime - s.startTime) / 60000 : 0;
       // We assume Pure Cardio sessions > 45m are Zone 2 unless they are marked as HIIT
@@ -876,6 +1065,7 @@ export default function App() {
 
     // 3. HIIT / VO2 Max: 1 session, ~30 min
     const hiitSessions = weeklySessions.filter(s => {
+      if (s.fitnessBucket) return s.fitnessBucket === 'HIIT';
       const isCardio = s.type === 'Pure Cardio';
       const duration = s.endTime ? (s.endTime - s.startTime) / 60000 : 0;
       // Assume Cardio < 40m or specific HIIT templates are HIIT
@@ -1046,6 +1236,12 @@ export default function App() {
       const hist = getExerciseHistory(ex.templateId);
       const dataStr = hist.map(h => `{date: ${new Date(h.date).toLocaleDateString()}, value: ${h.display}}`).join(', ');
       
+      const ai = getAiClient();
+      if (!ai) {
+        setAiAdvice(prev => ({ ...prev, [ex.id]: "Add GEMINI_API_KEY to your .env to enable AI Coach advice." }));
+        return;
+      }
+
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `Analyze this exercise data for "${ex.name}" and provide 1-2 sentences of specific coaching advice (plateau detection, progression tips, VO2 max optimization, or form cues). Data: [${dataStr}]. ${ex.targetSets ? `Goal: ${ex.targetSets} sets` : ''} ${ex.targetReps ? `of ${ex.targetReps} reps` : ''} ${ex.targetDuration ? `target ${formatTime(ex.targetDuration)}` : ''}. Keep it professional and concise.`,
@@ -1083,6 +1279,7 @@ export default function App() {
   };
 
   const getBucketForSession = (s: WorkoutSession): 'Heavy' | 'Zone 2' | 'HIIT' | 'Other' => {
+    if (s.fitnessBucket) return s.fitnessBucket;
     const duration = s.endTime ? (s.endTime - s.startTime) / 60000 : 0;
     if (['Lower Body', 'Chest/Shoulders', 'Back/Biceps'].includes(s.type) && duration >= 30) return 'Heavy';
     if ((s.type === 'Pure Cardio' || s.hasCardio) && duration >= 45) return 'Zone 2';
@@ -1313,32 +1510,63 @@ export default function App() {
         </div>
         
         <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
-          {pendingWorkouts.map(w => (
-            <div key={w.id} className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-4">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h4 className="font-bold text-slate-800">{w.name || 'External Workout'}</h4>
-                  <p className="text-[10px] text-slate-400">{new Date(w.startTime).toLocaleString()} • {Math.round((w.endTime - w.startTime)/60000)} min</p>
+          {pendingWorkouts.map(w => {
+            const suggested = (w.suggestedCategory || 'Zone 2') as FitnessBucket;
+            const durationMins = w.durationMins || Math.round((w.endTime - w.startTime) / 60000);
+            return (
+              <div key={w.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-slate-800">{w.name || w.activityTypeName || 'External Workout'}</h4>
+                      {w.activityTypeName && w.activityTypeName !== w.name && (
+                        <span className="text-[9px] bg-slate-200 text-slate-700 font-bold px-1.5 py-0.5 rounded uppercase">
+                          {w.activityTypeName}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {new Date(w.startTime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} • {durationMins} min
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs font-black text-rose-500">{Math.round(w.calories || 0)} kcal</p>
+                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{Math.round(w.avgHeartRate || 0)} bpm avg</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs font-black text-rose-500">{Math.round(w.calories)} kcal</p>
-                  <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{Math.round(w.avgHeartRate)} bpm avg</p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-3 gap-2">
-                {(['Heavy', 'Zone 2', 'HIIT'] as const).map(bucket => (
+
+                <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-2.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span className="text-[10px] font-bold text-slate-700">
+                      Suggested Category: <strong className="text-blue-600 font-black">{suggested}</strong>
+                    </span>
+                  </div>
                   <button 
-                    key={bucket}
-                    onClick={() => importUnmatchedWorkout(w, bucket)}
-                    className="py-2 bg-white border border-slate-200 hover:border-blue-500 hover:text-blue-600 rounded-xl text-[10px] font-black uppercase transition-all"
+                    onClick={() => importUnmatchedWorkout(w, suggested)}
+                    className="px-3 py-1 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-blue-700 transition-colors shadow-sm"
                   >
-                    {bucket}
+                    Accept
                   </button>
-                ))}
+                </div>
+                
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Or Choose Category:</p>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(['Heavy', 'Zone 2', 'HIIT', 'Other'] as FitnessBucket[]).map(bucket => (
+                      <button 
+                        key={bucket}
+                        onClick={() => importUnmatchedWorkout(w, bucket)}
+                        className={`py-1.5 bg-white border rounded-lg text-[9px] font-black uppercase transition-all ${bucket === suggested ? 'border-blue-400 text-blue-600 ring-1 ring-blue-400' : 'border-slate-200 text-slate-600 hover:border-slate-400'}`}
+                      >
+                        {bucket}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <div className="p-6 bg-slate-50 border-t border-slate-100">
            <button 
@@ -1619,7 +1847,7 @@ export default function App() {
   };
 
   return (
-    <div id="app-root" className="bg-slate-50 text-slate-900 font-sans min-h-screen flex flex-col overflow-hidden">
+    <div id="app-root" className="bg-slate-50 text-slate-900 font-sans h-full h-[100dvh] max-h-screen flex flex-col overflow-hidden">
       {/* Header */}
       <header id="app-header" className="h-16 bg-white border-b border-slate-200 px-4 md:px-6 flex items-center justify-between shrink-0 z-30">
         <div className="flex items-center gap-3">
@@ -1651,24 +1879,25 @@ export default function App() {
             <p className="text-[10px] text-blue-600 font-semibold uppercase tracking-wider">{equipmentMode}</p>
           </div>
           <button 
-            onClick={() => setShowAddCustom(true)}
+            onClick={() => setShowLibraryManager(true)}
             className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center hover:bg-white transition-colors"
+            title="Manage Exercise Library"
           >
             <Settings2 className="w-5 h-5 text-slate-500" />
           </button>
         </div>
       </header>
 
-      {/* Timer Bar (Active Only) - Sticky at top of viewport for focus */}
+      {/* Timer Bar (Active Only) - Firmly persistent at top of screen for continuous visibility */}
       <AnimatePresence>
         {(session || intervalMode !== 'none') && (
           <motion.div 
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="sticky top-0 bg-slate-900 text-white px-4 py-3 border-b border-slate-800 z-[60] flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xl"
+            className="shrink-0 bg-slate-900 text-white px-4 py-3 border-b border-slate-800 z-30 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 shadow-xl"
           >
-            <div className="flex flex-wrap items-center gap-6">
+            <div className="flex flex-wrap items-center gap-4 sm:gap-6">
               <div className="flex items-center gap-3">
                 <div className="flex flex-col">
                   <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">Session Timer</span>
@@ -1767,7 +1996,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <main className="flex-1 flex overflow-hidden relative">
+      <main className="flex-1 flex overflow-hidden relative min-h-0">
         {/* Sidebar - responsive overlay on mobile */}
         <aside className={`
           fixed inset-y-0 left-0 w-72 bg-white border-r border-slate-200 z-40 transition-transform duration-300 md:relative md:translate-x-0
@@ -1821,6 +2050,16 @@ export default function App() {
                 className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${currentView === 'Plans' ? 'bg-rose-50 text-rose-600' : 'text-slate-500 hover:bg-slate-50'}`}
               >
                 <BookOpen className="w-4 h-4" /> Training Plans
+              </button>
+
+              <button 
+                onClick={() => {
+                  setShowLibraryManager(true);
+                  setSidebarOpen(false);
+                }}
+                className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-50 transition-all"
+              >
+                <Dumbbell className="w-4 h-4" /> Exercise Library
               </button>
             </div>
 
@@ -1896,7 +2135,7 @@ export default function App() {
         )}
 
         {/* Dynamic Content Area */}
-        <div className="flex-1 overflow-y-auto bg-slate-50/30 p-4 md:p-8">
+        <div className="flex-1 overflow-y-auto bg-slate-50/30 p-4 md:p-8 min-h-0">
           {currentView === 'Calendar' ? (
             <CalendarView />
           ) : currentView === 'Plans' ? (
@@ -1934,9 +2173,21 @@ export default function App() {
                         <span className="text-[10px] font-bold text-slate-400 shrink-0">
                           {cat === 'Mobility' ? '10m' : cat === 'Posture' ? '5m' : cat === 'Cardio' ? '20-30m' : '25-45m'}
                         </span>
+                        {cat === 'Resistance' && (
+                          <button 
+                            onClick={rerollResistanceExercises}
+                            title="Re-roll resistance exercises randomly"
+                            className="flex items-center gap-1 text-[10px] font-bold text-amber-600 hover:text-amber-700 bg-amber-50 px-2 py-1 rounded transition-colors"
+                          >
+                            <Shuffle className="w-3 h-3" /> Re-roll
+                          </button>
+                        )}
                         <button 
                           onClick={() => {
                             setAddingToCategory(cat);
+                            setDrawerCategoryFilter(cat);
+                            setDrawerSplitFilter('Current');
+                            setDrawerSearch('');
                             setShowLibrary(true);
                           }}
                           className="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-2 py-1 rounded transition-colors"
@@ -2010,6 +2261,9 @@ export default function App() {
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setSwappingExId(ex.id);
+                                      setDrawerCategoryFilter(ex.category);
+                                      setDrawerSplitFilter('Current');
+                                      setDrawerSearch('');
                                       setShowLibrary(true);
                                     }}
                                     className="text-slate-300 hover:text-blue-500 transition-colors p-1"
@@ -2540,67 +2794,163 @@ export default function App() {
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
               className="relative w-full max-w-lg bg-white h-screen shadow-3xl flex flex-col"
             >
-              <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-white z-10">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900">
-                    {swappingExId ? 'Swap Drill' : addingToCategory ? `Add ${addingToCategory}` : 'Exercise Library'}
-                  </h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                    {swappingExId ? 'Choose a variation' : addingToCategory ? 'Expand your block' : `Filtered for ${equipmentMode} Mode`}
-                  </p>
+              <div className="p-6 border-b border-slate-200 bg-white z-10 space-y-4">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900">
+                      {swappingExId ? 'Swap Drill' : addingToCategory ? `Add ${addingToCategory}` : 'Exercise Library'}
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                      {swappingExId ? 'Choose any variation or body part' : addingToCategory ? 'Choose movement from any muscle group' : `Filtered for ${equipmentMode} Mode`}
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setShowLibrary(false);
+                      setSwappingExId(null);
+                      setAddingToCategory(null);
+                    }} 
+                    className="p-2 hover:bg-slate-100 rounded-full"
+                  >
+                    <X className="w-5 h-5 text-slate-400" />
+                  </button>
                 </div>
-                <button 
-                  onClick={() => {
-                    setShowLibrary(false);
-                    setSwappingExId(null);
-                    setAddingToCategory(null);
-                  }} 
-                  className="p-2 hover:bg-slate-100 rounded-full"
-                >
-                  <X className="w-5 h-5 text-slate-400" />
-                </button>
+
+                {/* Search Bar */}
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input 
+                    type="text"
+                    value={drawerSearch}
+                    onChange={e => setDrawerSearch(e.target.value)}
+                    placeholder="Search exercise name or keyword..."
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                  {drawerSearch && (
+                    <button onClick={() => setDrawerSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Body Part / Target Split Filters */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Body Part / Split</span>
+                    {drawerSplitFilter !== 'All' && (
+                      <button onClick={() => setDrawerSplitFilter('All')} className="text-[9px] text-blue-600 font-bold hover:underline">Show All</button>
+                    )}
+                  </div>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                    {(['Current', 'All', ...SESSION_TYPES] as const).map(split => (
+                      <button
+                        key={split}
+                        onClick={() => setDrawerSplitFilter(split)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all ${drawerSplitFilter === split ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                      >
+                        {split === 'Current' ? `Current (${session?.type || 'Split'})` : split}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Category Filters */}
+                <div>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Category</span>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                    {(['All', 'Resistance', 'Mobility', 'Posture', 'Cardio'] as const).map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => setDrawerCategoryFilter(cat)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all ${drawerCategoryFilter === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 space-y-8">
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
                  {(() => {
-                   const categories: ExerciseCategory[] = swappingExId 
-                     ? [session?.exercises.find(e => e.id === swappingExId)?.category as ExerciseCategory]
-                     : addingToCategory 
-                       ? [addingToCategory]
-                       : ['Mobility', 'Posture', 'Resistance', 'Cardio'];
+                   const categories: ExerciseCategory[] = drawerCategoryFilter === 'All'
+                     ? ['Resistance', 'Mobility', 'Posture', 'Cardio']
+                     : [drawerCategoryFilter];
+
+                   const filteredCandidates = allTemplates.filter(t => {
+                     // Equipment mode match
+                     if (!t.equipment.includes(equipmentMode)) return false;
+
+                     // Category match
+                     if (drawerCategoryFilter !== 'All' && t.category !== drawerCategoryFilter) return false;
+
+                     // Split / Body Part match
+                     if (drawerSplitFilter === 'Current') {
+                       const isMatch = !t.targetSplits || t.targetSplits.includes('All') || (session && t.targetSplits.includes(session.type));
+                       if (!isMatch && t.category === 'Resistance') return false;
+                     } else if (drawerSplitFilter !== 'All') {
+                       const isMatch = !t.targetSplits || t.targetSplits.includes('All') || t.targetSplits.includes(drawerSplitFilter as SessionType);
+                       if (!isMatch && t.category === 'Resistance') return false;
+                     }
+
+                     // Search keyword match
+                     if (drawerSearch.trim()) {
+                       const q = drawerSearch.toLowerCase();
+                       const nameMatch = t.name.toLowerCase().includes(q);
+                       const notesMatch = t.notes?.toLowerCase().includes(q);
+                       const splitMatch = t.targetSplits?.some(s => s.toLowerCase().includes(q));
+                       if (!nameMatch && !notesMatch && !splitMatch) return false;
+                     }
+
+                     return true;
+                   });
+
+                   if (filteredCandidates.length === 0) {
+                     return (
+                       <div className="text-center py-16">
+                         <Dumbbell className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                         <p className="text-sm font-bold text-slate-700">No exercises found</p>
+                         <p className="text-xs text-slate-400 mt-1">Try switching body part filter or search keyword.</p>
+                       </div>
+                     );
+                   }
 
                    return categories.map(cat => {
-                     const candidates = allTemplates.filter(t => {
-                       const isRightCat = t.category === cat;
-                       const isRightEquip = t.equipment.includes(equipmentMode);
-                       const isRightSplit = !t.targetSplits || t.targetSplits.includes('All') || (session && t.targetSplits.includes(session.type));
-                       return isRightCat && isRightEquip && isRightSplit;
-                     });
-
-                     if (candidates.length === 0) return null;
+                     const catCandidates = filteredCandidates.filter(t => t.category === cat);
+                     if (catCandidates.length === 0) return null;
                      
                      return (
-                       <div key={cat} className="space-y-4">
-                         <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">{cat}</h4>
+                       <div key={cat} className="space-y-3">
+                         <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                           <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">{cat}</h4>
+                           <span className="text-[10px] text-slate-400 font-bold">{catCandidates.length} movements</span>
+                         </div>
                          <div className="space-y-2">
-                           {candidates.map(t => (
-                             <div key={t.id} className="flex justify-between items-center p-4 bg-slate-50 border border-slate-100 rounded-xl hover:border-blue-300 hover:bg-blue-50/30 transition-all cursor-default group">
-                               <div>
-                                 <p className="text-sm font-bold text-slate-800">{t.name}</p>
-                                 <div className="flex gap-1 mt-1">
+                           {catCandidates.map(t => (
+                             <div key={t.id} className="flex justify-between items-center p-3.5 bg-slate-50 border border-slate-100 rounded-xl hover:border-blue-300 hover:bg-blue-50/30 transition-all cursor-default group">
+                               <div className="max-w-[78%]">
+                                 <div className="flex items-center gap-2">
+                                   <p className="text-sm font-bold text-slate-800">{t.name}</p>
+                                   {t.targetSplits && !t.targetSplits.includes('All') && (
+                                     <span className="text-[8px] bg-slate-200 text-slate-600 font-bold px-1.5 py-0.5 rounded">
+                                       {t.targetSplits.join(', ')}
+                                     </span>
+                                   )}
+                                 </div>
+                                 <div className="flex gap-1 mt-1 flex-wrap">
                                    {t.trackingFields.map(f => (
                                      <span key={f} className="text-[8px] px-1 bg-slate-200 text-slate-500 rounded font-bold">{f}</span>
                                    ))}
                                  </div>
                                  {t.notes && (
-                                   <p className="text-[10px] text-slate-400 mt-2 italic max-w-[200px] leading-tight line-clamp-2">{t.notes}</p>
+                                   <p className="text-[10px] text-slate-400 mt-1.5 italic max-w-[240px] leading-tight line-clamp-2">{t.notes}</p>
                                  )}
                                  {t.videoUrl && (
                                    <a 
                                      href={t.videoUrl} 
                                      target="_blank" 
                                      rel="noopener noreferrer"
-                                     className="inline-flex items-center gap-1 mt-2 text-[8px] font-black uppercase tracking-widest text-blue-600 hover:text-blue-700 hover:underline"
+                                     className="inline-flex items-center gap-1 mt-1.5 text-[8px] font-black uppercase tracking-widest text-blue-600 hover:text-blue-700 hover:underline"
                                    >
                                      <Play className="w-2 h-2" /> Watch Coaching
                                    </a>
@@ -2608,7 +2958,8 @@ export default function App() {
                                </div>
                                <button 
                                  onClick={() => addToSession(t)}
-                                 className="p-2 bg-white text-blue-600 rounded-lg shadow-sm border border-slate-200 hover:bg-blue-600 hover:text-white transition-all"
+                                 className="p-2 bg-white text-blue-600 rounded-lg shadow-sm border border-slate-200 hover:bg-blue-600 hover:text-white transition-all shrink-0 ml-2"
+                                 title={swappingExId ? "Swap with this exercise" : "Add to session"}
                                >
                                  {swappingExId ? <RefreshCw className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                                </button>
@@ -2625,19 +2976,236 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Add Custom Exercise Modal */}
+      {/* Exercise Library Manager Modal */}
+      <AnimatePresence>
+        {showLibraryManager && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-[75]">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[2rem] w-full max-w-4xl shadow-3xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              {/* Manager Header */}
+              <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50 shrink-0">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="p-1.5 bg-blue-100 text-blue-600 rounded-lg">
+                      <Dumbbell className="w-4 h-4" />
+                    </span>
+                    <h3 className="text-xl font-bold text-slate-900">Exercise Library Manager</h3>
+                  </div>
+                  <p className="text-xs text-slate-400">Manage all movements, edit properties, delete exercises, or add custom drills.</p>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  {(deletedExerciseIds.length > 0 || Object.keys(exerciseOverrides).length > 0) && (
+                    <button 
+                      onClick={handleRestoreAllDefaults}
+                      className="px-3 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-xs font-bold hover:bg-amber-100 transition-colors"
+                      title="Reset modified and deleted built-in exercises back to default"
+                    >
+                      Restore Defaults
+                    </button>
+                  )}
+                  <button 
+                    onClick={startNewExercise}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" /> New Exercise
+                  </button>
+                  <button 
+                    onClick={() => setShowLibraryManager(false)}
+                    className="p-2 hover:bg-slate-200 rounded-xl transition-colors ml-1"
+                  >
+                    <X className="w-5 h-5 text-slate-400" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Search and Filters */}
+              <div className="p-4 border-b border-slate-100 bg-white space-y-3 shrink-0">
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input 
+                    type="text"
+                    value={mgrSearch}
+                    onChange={e => setMgrSearch(e.target.value)}
+                    placeholder="Search exercise library by name or note..."
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                  {mgrSearch && (
+                    <button onClick={() => setMgrSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5 overflow-x-auto">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mr-1">Category:</span>
+                    {(['All', 'Resistance', 'Mobility', 'Posture', 'Cardio'] as const).map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => setMgrCategoryFilter(cat)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all ${mgrCategoryFilter === cat ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mr-1">Split:</span>
+                    {(['All', ...SESSION_TYPES] as const).map(split => (
+                      <button
+                        key={split}
+                        onClick={() => setMgrSplitFilter(split)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all ${mgrSplitFilter === split ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                      >
+                        {split}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Exercise Items List */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-3">
+                {(() => {
+                  const filtered = allTemplates.filter(t => {
+                    if (mgrCategoryFilter !== 'All' && t.category !== mgrCategoryFilter) return false;
+                    if (mgrSplitFilter !== 'All') {
+                      const matchSplit = !t.targetSplits || t.targetSplits.includes('All') || t.targetSplits.includes(mgrSplitFilter as SessionType);
+                      if (!matchSplit && t.category === 'Resistance') return false;
+                    }
+                    if (mgrSearch.trim()) {
+                      const q = mgrSearch.toLowerCase();
+                      const nameM = t.name.toLowerCase().includes(q);
+                      const notesM = t.notes?.toLowerCase().includes(q);
+                      const splitM = t.targetSplits?.some(s => s.toLowerCase().includes(q));
+                      if (!nameM && !notesM && !splitM) return false;
+                    }
+                    return true;
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="text-center py-16">
+                        <Dumbbell className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                        <p className="text-sm font-bold text-slate-700">No exercises found</p>
+                        <p className="text-xs text-slate-400 mt-1">Try adjusting your filters or search terms.</p>
+                      </div>
+                    );
+                  }
+
+                  return filtered.map(t => {
+                    const isCustom = t.id.startsWith('custom_');
+                    const isModified = !isCustom && !!exerciseOverrides[t.id];
+
+                    return (
+                      <div key={t.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-blue-300 transition-colors">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-bold text-slate-900 text-sm">{t.name}</h4>
+                            <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase bg-blue-100 text-blue-700">
+                              {t.category}
+                            </span>
+                            {t.targetSplits && (
+                              <span className="text-[9px] font-bold px-2 py-0.5 rounded uppercase bg-slate-200 text-slate-600">
+                                {t.targetSplits.join(', ')}
+                              </span>
+                            )}
+                            {isCustom ? (
+                              <span className="text-[9px] font-bold px-2 py-0.5 rounded uppercase bg-purple-100 text-purple-700">
+                                Custom
+                              </span>
+                            ) : isModified ? (
+                              <span className="text-[9px] font-bold px-2 py-0.5 rounded uppercase bg-amber-100 text-amber-700">
+                                Modified Default
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold px-2 py-0.5 rounded uppercase bg-slate-100 text-slate-500">
+                                Built-in
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
+                            <span>Equip: {t.equipment.join(', ')}</span>
+                            <span>•</span>
+                            <span>Fields: {t.trackingFields.join(', ')}</span>
+                            {t.suggestedSets && (
+                              <>
+                                <span>•</span>
+                                <span>Target: {t.suggestedSets} sets {t.suggestedReps ? `× ${t.suggestedReps}` : ''}</span>
+                              </>
+                            )}
+                          </div>
+
+                          {t.notes && <p className="text-[10px] text-slate-500 italic">{t.notes}</p>}
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                          {isModified && (
+                            <button 
+                              onClick={() => handleRestoreBaseExercise(t.id)}
+                              className="px-2.5 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-[10px] font-bold transition-colors"
+                              title="Revert to original default settings"
+                            >
+                              Revert
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => startEditExercise(t)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:border-blue-400 hover:text-blue-600 rounded-xl text-xs font-bold transition-colors shadow-sm"
+                            title="Edit Exercise"
+                          >
+                            <Edit className="w-3.5 h-3.5" /> Edit
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteExercise(t)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title={isCustom ? "Delete Custom Exercise" : "Hide/Delete Built-in Exercise"}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add / Edit Exercise Modal */}
       <AnimatePresence>
         {showAddCustom && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-[85]">
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-[2rem] p-10 w-full max-w-md shadow-3xl overflow-hidden"
+              className="bg-white rounded-[2rem] p-8 md:p-10 w-full max-w-lg shadow-3xl overflow-y-auto max-h-[90vh]"
             >
-              <h3 className="text-2xl font-bold text-slate-900 mb-6">Create Custom Movement</h3>
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-2xl font-bold text-slate-900">
+                    {editingExercise ? `Edit "${editingExercise.name}"` : 'Create Custom Movement'}
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {editingExercise ? 'Update tracking data points, sets, target splits, and notes.' : 'Add a new exercise to your personal training catalog.'}
+                  </p>
+                </div>
+                <button onClick={() => { setShowAddCustom(false); setEditingExercise(null); }} className="p-2 hover:bg-slate-100 rounded-full">
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
               
-              <div className="space-y-6">
+              <div className="space-y-5">
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">EXERCISE NAME</label>
                   <input 
@@ -2645,7 +3213,7 @@ export default function App() {
                     value={newExName}
                     onChange={e => setNewExName(e.target.value)}
                     placeholder="e.g., Cable Hammer Curl"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 outline-none"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 outline-none text-sm font-medium"
                   />
                 </div>
 
@@ -2656,7 +3224,7 @@ export default function App() {
                       <button 
                         key={cat}
                         onClick={() => setNewExCategory(cat)}
-                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${newExCategory === cat ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${newExCategory === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                       >
                         {cat}
                       </button>
@@ -2665,14 +3233,38 @@ export default function App() {
                 </div>
 
                 <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">EQUIPMENT MODES</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {(['Full Gym', 'Travel', 'Bodyweight'] as EquipmentMode[]).map(eq => (
+                      <button 
+                        key={eq}
+                        onClick={() => {
+                          if (newExEquipment.includes(eq)) {
+                            if (newExEquipment.length > 1) setNewExEquipment(newExEquipment.filter(e => e !== eq));
+                          } else {
+                            setNewExEquipment([...newExEquipment, eq]);
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${newExEquipment.includes(eq) ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-400'}`}
+                      >
+                        {eq}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">TRACKING DATA POINTS</label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     {TRACKING_FIELDS.map(f => (
                       <button 
                         key={f}
                         onClick={() => {
-                          if (newExFields.includes(f)) setNewExFields(newExFields.filter(x => x !== f));
-                          else setNewExFields([...newExFields, f]);
+                          if (newExFields.includes(f)) {
+                            if (newExFields.length > 1) setNewExFields(newExFields.filter(x => x !== f));
+                          } else {
+                            setNewExFields([...newExFields, f]);
+                          }
                         }}
                         className={`py-2 rounded-lg text-[10px] font-bold transition-all border ${newExFields.includes(f) ? 'bg-blue-50 border-blue-500 text-blue-600' : 'bg-white border-slate-200 text-slate-400'}`}
                       >
@@ -2698,16 +3290,63 @@ export default function App() {
                       </button>
                     ))}
                   </div>
-                  <p className="text-[9px] text-slate-400 mt-2 italic">Select specific days or leave empty for 'All'.</p>
+                  <p className="text-[9px] text-slate-400 mt-1 italic">Leave empty to allow this movement on 'All' split days.</p>
+                </div>
+
+                {/* Suggested Sets, Reps, Rest, Duration */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Target Sets</label>
+                    <input 
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={newExSets}
+                      onChange={e => setNewExSets(parseInt(e.target.value) || 3)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Target Reps</label>
+                    <input 
+                      type="text"
+                      value={newExReps}
+                      onChange={e => setNewExReps(e.target.value)}
+                      placeholder="10"
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Rest (sec)</label>
+                    <input 
+                      type="number"
+                      step={15}
+                      min={0}
+                      value={newExRest}
+                      onChange={e => setNewExRest(parseInt(e.target.value) || 0)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Duration (sec)</label>
+                    <input 
+                      type="number"
+                      step={30}
+                      min={0}
+                      value={newExDuration}
+                      onChange={e => setNewExDuration(parseInt(e.target.value) || 0)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold outline-none"
+                    />
+                  </div>
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">NOTES / CUES</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">NOTES / FORM CUES</label>
                   <textarea 
                     value={newExNotes}
                     onChange={e => setNewExNotes(e.target.value)}
-                    placeholder="e.g., Keep elbows tucked, pause at top..."
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 outline-none text-sm min-h-[80px]"
+                    placeholder="e.g., Keep chest elevated, drive through midfoot..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 outline-none text-sm min-h-[70px]"
                   />
                 </div>
 
@@ -2718,20 +3357,25 @@ export default function App() {
                       type="text" 
                       value={newExVideoUrl}
                       onChange={e => setNewExVideoUrl(e.target.value)}
-                      placeholder="https://..."
+                      placeholder="https://youtube.com/..."
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 outline-none text-sm"
                     />
                     <Play className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
                   </div>
                 </div>
 
-                <div className="flex gap-3 pt-4">
-                  <button onClick={() => setShowAddCustom(false)} className="flex-1 py-4 text-slate-500 font-bold hover:bg-slate-50 rounded-2xl transition-colors">Cancel</button>
+                <div className="flex gap-3 pt-3 border-t border-slate-100">
                   <button 
-                    onClick={handleCreateCustom}
-                    className="flex-1 py-4 bg-slate-900 text-white font-bold rounded-2xl hover:bg-slate-800 transition-colors shadow-lg"
+                    onClick={() => { setShowAddCustom(false); setEditingExercise(null); }} 
+                    className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-colors"
                   >
-                    Save to Library
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleSaveCustomExercise}
+                    className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200 text-sm"
+                  >
+                    {editingExercise ? 'Save Changes' : 'Add to Library'}
                   </button>
                 </div>
               </div>
