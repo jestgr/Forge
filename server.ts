@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { OAuth2Client } from "google-auth-library";
 import cookieParser from "cookie-parser";
@@ -132,6 +133,82 @@ app.post("/api/fit/disconnect", (req, res) => {
   res.json({ success: true });
 });
 
+// Google Fit Activity Types mapping
+const FIT_ACTIVITY_MAP: { [key: number]: string } = {
+  0: "In Vehicle",
+  1: "Biking",
+  2: "On Foot",
+  3: "Still",
+  7: "Walking",
+  8: "Running",
+  9: "Aerobics",
+  13: "Circuit Training",
+  14: "Crossfit",
+  15: "Dance",
+  16: "Elliptical",
+  20: "Calisthenics",
+  21: "Circuit Training",
+  24: "Rowing",
+  25: "Elliptical",
+  26: "Stair Climbing",
+  41: "Kettlebell",
+  57: "Rowing Machine",
+  58: "Running (Treadmill)",
+  72: "Sleep",
+  86: "HIIT",
+  87: "Interval Training",
+  97: "Strength Training",
+  100: "Rowing",
+  102: "Elliptical",
+  103: "Stair Climbing",
+  104: "Sprinting",
+  108: "Yoga",
+  109: "Pilates",
+  113: "Crossfit",
+  114: "Functional Strength",
+  115: "Boxing",
+  119: "Weightlifting"
+};
+
+const getSuggestedCategory = (activityType: number, name: string = "", durationMins: number, avgHeartRate: number): 'Heavy' | 'Zone 2' | 'HIIT' | 'Other' => {
+  const lowerName = (name || "").toLowerCase();
+  
+  // Explicit name matches
+  if (lowerName.includes("hiit") || lowerName.includes("interval") || lowerName.includes("sprint") || lowerName.includes("4x4") || lowerName.includes("tabata") || lowerName.includes("vo2")) {
+    return 'HIIT';
+  }
+  if (lowerName.includes("zone 2") || lowerName.includes("z2") || lowerName.includes("steady state") || lowerName.includes("aerobic base")) {
+    return 'Zone 2';
+  }
+  if (lowerName.includes("strength") || lowerName.includes("weight") || lowerName.includes("lift") || lowerName.includes("squat") || lowerName.includes("bench") || lowerName.includes("deadlift") || lowerName.includes("heavy") || lowerName.includes("resistance") || lowerName.includes("gym")) {
+    return 'Heavy';
+  }
+
+  // Activity Type IDs for Resistance / Heavy lifts
+  if ([97, 119, 113, 114, 20, 21, 41, 13, 14].includes(activityType)) {
+    return 'Heavy';
+  }
+
+  // HIIT / High Intensity
+  if ([86, 87, 104, 115].includes(activityType) || (durationMins >= 15 && durationMins <= 35 && avgHeartRate >= 150)) {
+    return 'HIIT';
+  }
+
+  // Zone 2 / Steady State Cardio
+  if ([1, 7, 8, 24, 25, 26, 57, 58, 100, 102, 103, 16].includes(activityType)) {
+    if (avgHeartRate >= 160 && durationMins <= 30) {
+      return 'HIIT';
+    }
+    return 'Zone 2';
+  }
+
+  // Catch-alls based on intensity & duration
+  if (avgHeartRate >= 150 && durationMins < 40) return 'HIIT';
+  if (durationMins >= 30) return 'Zone 2';
+  
+  return 'Other';
+};
+
 // Get Google Fit Data
 app.get("/api/fit/sync", async (req, res) => {
   const tokenCookie = req.cookies.google_fit_tokens;
@@ -152,31 +229,59 @@ app.get("/api/fit/sync", async (req, res) => {
     const startTimeMillis = req.query.startTime ? parseInt(req.query.startTime as string) : defaultStart;
     const endTimeMillis = req.query.endTime ? parseInt(req.query.endTime as string) : defaultEnd;
 
-    // 1. Fetch Steps (Bucket by Day)
-    const stepsResponse = await client.request({
-      url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
-      method: "POST",
-      data: {
-        aggregateBy: [{ dataTypeName: "com.google.step_count.delta" }],
-        bucketByTime: { durationMillis: 86400000 }, // 24 hours
-        startTimeMillis,
-        endTimeMillis
-      }
-    }) as any;
+    // 1. Fetch Steps (Bucket by Day) - first try merged estimated_steps
+    let stepsResponse: any;
+    try {
+      stepsResponse = await client.request({
+        url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
+        method: "POST",
+        data: {
+          aggregateBy: [
+            { 
+              dataTypeName: "com.google.step_count.delta",
+              dataSourceId: "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps"
+            }
+          ],
+          bucketByTime: { durationMillis: 86400000 }, // 24 hours
+          startTimeMillis,
+          endTimeMillis
+        }
+      });
+    } catch (err) {
+      // Fallback to generic step_count aggregation if explicit estimated_steps fails
+      stepsResponse = await client.request({
+        url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
+        method: "POST",
+        data: {
+          aggregateBy: [{ dataTypeName: "com.google.step_count.delta" }],
+          bucketByTime: { durationMillis: 86400000 },
+          startTimeMillis,
+          endTimeMillis
+        }
+      });
+    }
 
     const dailyStepsMap: { [dateStr: string]: number } = {};
     let totalSteps = 0;
 
-    if (stepsResponse.data.bucket) {
+    if (stepsResponse.data && stepsResponse.data.bucket) {
       stepsResponse.data.bucket.forEach((bucket: any) => {
         const date = new Date(parseInt(bucket.startTimeMillis));
         const dateStr = date.toDateString();
         let bucketSteps = 0;
-        if (bucket.dataset && bucket.dataset[0] && bucket.dataset[0].point && bucket.dataset[0].point[0]) {
-          bucketSteps = bucket.dataset[0].point[0].value[0].intVal || 0;
+        if (bucket.dataset) {
+          bucket.dataset.forEach((ds: any) => {
+            if (ds.point) {
+              ds.point.forEach((point: any) => {
+                if (point.value && point.value[0]) {
+                  bucketSteps += (point.value[0].intVal || point.value[0].fpVal || 0);
+                }
+              });
+            }
+          });
         }
-        dailyStepsMap[dateStr] = bucketSteps;
-        totalSteps += bucketSteps;
+        dailyStepsMap[dateStr] = Math.round(bucketSteps);
+        totalSteps += Math.round(bucketSteps);
       });
     }
 
@@ -277,6 +382,7 @@ app.get("/api/fit/sync", async (req, res) => {
     const detailedSessions = await Promise.all(activeWorkoutSessions.map(async (session: any) => {
       const sStart = parseInt(session.startTimeMillis);
       const sEnd = parseInt(session.endTimeMillis);
+      const durationMins = Math.max(1, Math.round((sEnd - sStart) / 60000));
 
       const statsResponse = await client.request({
         url: "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate",
@@ -287,7 +393,7 @@ app.get("/api/fit/sync", async (req, res) => {
             { dataTypeName: "com.google.calories.expended" },
             { dataTypeName: "com.google.distance.delta" }
           ],
-          bucketByTime: { durationMillis: sEnd - sStart },
+          bucketByTime: { durationMillis: Math.max(1, sEnd - sStart) },
           startTimeMillis: sStart,
           endTimeMillis: sEnd
         }
@@ -298,27 +404,50 @@ app.get("/api/fit/sync", async (req, res) => {
       let totalDistance = 0;
 
       if (statsResponse.data.bucket && statsResponse.data.bucket[0]) {
-        const heartRateSet = statsResponse.data.bucket[0].dataset.find((ds: any) => ds.dataSourceId.includes("heart_rate"));
-        const caloriesSet = statsResponse.data.bucket[0].dataset.find((ds: any) => ds.dataSourceId.includes("calories"));
-        const distanceSet = statsResponse.data.bucket[0].dataset.find((ds: any) => ds.dataSourceId.includes("distance"));
+        const heartRateSet = statsResponse.data.bucket[0].dataset.find((ds: any) => ds.dataSourceId?.includes("heart_rate"));
+        const caloriesSet = statsResponse.data.bucket[0].dataset.find((ds: any) => ds.dataSourceId?.includes("calories"));
+        const distanceSet = statsResponse.data.bucket[0].dataset.find((ds: any) => ds.dataSourceId?.includes("distance"));
 
-        if (heartRateSet?.point[0]) avgHeartRate = Math.round(heartRateSet.point[0].value[0].fpVal || 0);
-        if (caloriesSet?.point[0]) totalCalories = Math.round(caloriesSet.point[0].value[0].fpVal || 0);
-        if (distanceSet?.point[0]) {
-          // Convert meters to miles
-          totalDistance = (distanceSet.point[0].value[0].fpVal || 0) * 0.000621371;
+        if (heartRateSet?.point && heartRateSet.point.length > 0) {
+          const sumHr = heartRateSet.point.reduce((acc: number, p: any) => acc + (p.value?.[0]?.fpVal || p.value?.[0]?.intVal || 0), 0);
+          avgHeartRate = Math.round(sumHr / heartRateSet.point.length);
+        }
+
+        if (caloriesSet?.point) {
+          caloriesSet.point.forEach((p: any) => {
+            if (p.value && p.value[0]) {
+              totalCalories += (p.value[0].fpVal || p.value[0].intVal || 0);
+            }
+          });
+          totalCalories = Math.round(totalCalories);
+        }
+
+        if (distanceSet?.point) {
+          distanceSet.point.forEach((p: any) => {
+            if (p.value && p.value[0]) {
+              // Convert meters to miles
+              totalDistance += ((p.value[0].fpVal || 0) * 0.000621371);
+            }
+          });
+          totalDistance = parseFloat(totalDistance.toFixed(2));
         }
       }
 
+      const activityTypeName = FIT_ACTIVITY_MAP[session.activityType] || session.name || `Activity ${session.activityType}`;
+      const suggestedCategory = getSuggestedCategory(session.activityType, session.name, durationMins, avgHeartRate);
+
       return {
         id: session.id,
-        name: session.name,
+        name: session.name || activityTypeName,
+        activityTypeName,
         type: session.activityType,
         startTime: sStart,
         endTime: sEnd,
+        durationMins,
         avgHeartRate,
         calories: totalCalories,
-        distance: totalDistance
+        distance: totalDistance,
+        suggestedCategory
       };
     }));
 
@@ -337,12 +466,31 @@ app.get("/api/fit/sync", async (req, res) => {
 
 // Vite middleware setup
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  const isDev = process.argv.includes("--dev") || process.env.NODE_ENV === "development";
+  const isProduction = !isDev && (process.env.NODE_ENV === "production" || process.argv.includes("--production") || fs.existsSync(path.join(process.cwd(), "dist", "index.html")));
+
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
+
+    // Transform and serve index.html for all non-API navigation requests in dev
+    app.use("*", async (req, res, next) => {
+      if (req.originalUrl.startsWith("/api")) {
+        return next();
+      }
+      try {
+        const indexPath = path.resolve(process.cwd(), "index.html");
+        let template = fs.readFileSync(indexPath, "utf-8");
+        template = await vite.transformIndexHtml(req.originalUrl, template);
+        res.status(200).set({ "Content-Type": "text/html" }).end(template);
+      } catch (e: any) {
+        vite.ssrFixStacktrace(e);
+        next(e);
+      }
+    });
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
