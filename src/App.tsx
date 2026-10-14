@@ -76,6 +76,11 @@ import {
   FitnessBucket
 } from './types';
 
+// Feature switches. Google Fit and the AI Coach need a backend server, which the
+// static GitHub Pages build doesn't have. Server code lives on the feat/cloud-run branch.
+const FIT_ENABLED = false;
+const AI_ENABLED = false;
+
 // Storage keys
 const STORAGE_KEY = 'forge_workout_state';
 
@@ -253,6 +258,7 @@ export default function App() {
 
   // Timers Effect
   useEffect(() => {
+    if (!FIT_ENABLED) return;
     // Check if we already have a session
     const checkAuth = async () => {
       try {
@@ -1317,6 +1323,7 @@ export default function App() {
                 </div>
               </div>
 
+              {FIT_ENABLED && (<>
               {/* Sleep Card */}
               <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -1354,6 +1361,7 @@ export default function App() {
                   </p>
                 </div>
               </div>
+              </>)}
             </div>
 
             {/* Sessions List */}
@@ -1808,6 +1816,7 @@ export default function App() {
             <div className="w-4 h-4 bg-indigo-50 text-indigo-600 rounded flex items-center justify-center"><Activity className="w-2.5 h-2.5" /></div>
             <span>Steps (7k+ Goal)</span>
           </div>
+          {FIT_ENABLED && (<>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-blue-50 text-blue-600 rounded flex items-center justify-center"><Moon className="w-2.5 h-2.5 fill-current" /></div>
             <span>Sleep (7-9h Target)</span>
@@ -1816,6 +1825,7 @@ export default function App() {
             <div className="w-4 h-4 bg-emerald-50 text-emerald-600 rounded flex items-center justify-center"><Star className="w-2.5 h-2.5 fill-current" /></div>
             <span>Heart Points (20+ Goal)</span>
           </div>
+          </>)}
         </div>
 
         <div className="bg-white border border-slate-200 rounded-[2rem] p-1 shadow-2xl shadow-slate-200/50 overflow-hidden">
@@ -2334,6 +2344,7 @@ export default function App() {
                                       </div>
                                     </div>
 
+                                    {AI_ENABLED && (
                                     <div className="flex flex-col sm:flex-row gap-4">
                                       <button 
                                         onClick={() => getAIAdvice(ex)}
@@ -2354,6 +2365,7 @@ export default function App() {
                                         </motion.div>
                                       )}
                                     </div>
+                                    )}
                                   </motion.div>
                                 )}
                               </AnimatePresence>
@@ -2487,6 +2499,7 @@ export default function App() {
                           >
                             Log
                           </button>
+                          {FIT_ENABLED && (<>
                           <button 
                             onClick={isGoogleConnected ? handleSyncFit : handleConnectFit}
                             disabled={isSyncing}
@@ -2506,6 +2519,7 @@ export default function App() {
                               <span className="hidden sm:inline">Disconnect</span>
                             </button>
                           )}
+                          </>)}
                         </div>
                       </motion.div>
                     </div>
@@ -2588,6 +2602,7 @@ export default function App() {
                             </div>
 
                             {/* Google Fit Heart Points metrics */}
+                            {FIT_ENABLED && (
                             <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
                               <div className="flex justify-between items-center mb-1.5">
                                 <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.1em]">Google Heart Points</p>
@@ -2600,6 +2615,7 @@ export default function App() {
                                 />
                               </div>
                             </div>
+                            )}
                           </div>
                           <p className="text-[10px] text-slate-400 mt-3 font-medium italic">Efficiency Index: Combines structured cardio output + step-movement equivalent and active intensity heart points metrics.</p>
                         </motion.div>

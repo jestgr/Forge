@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Forge data exports (personal data)
+forge_backup_*.json
+forge_library_*.json

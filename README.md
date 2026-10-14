@@ -1,20 +1,24 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Forge: Workout Builder
 
-# Run and deploy your AI Studio app
+A phone-friendly workout tracker (installable PWA) with a 12-week VO2 Max progression plan.
+All data is stored on the device (browser `localStorage`); use **Export** / **Import** in the app to back up or move it.
 
-This contains everything you need to run your app locally.
+Live app: https://jestgr.github.io/Forge/ — on your phone, open it in Chrome and use **Add to Home screen**.
 
-View your app in AI Studio: https://ai.studio/apps/1abd6afe-b693-4d5d-946f-de7e5d8af5e6
+## Develop
+Requires Node.js 20+.
 
-## Run Locally
+```
+npm install
+npm run dev      # http://<this-machine>:3010
+npm run lint     # type-check
+npm run build    # static site in dist/
+npm run preview  # serve dist/ on :3010
+```
 
-**Prerequisites:**  Node.js
+## Deploy
+Merging to `main` runs `.github/workflows/deploy.yml`, which builds the site and publishes it to GitHub Pages.
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Switched off for now
+Google Fit sync and the AI Coach need a backend server, which GitHub Pages doesn't provide.
+They're behind `FIT_ENABLED` / `AI_ENABLED` in `src/App.tsx`; the server code is kept on the `feat/cloud-run` branch.

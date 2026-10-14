@@ -1,10 +1,11 @@
 // Service Worker for FORGE PWA: network-first so new deploys show up,
 // falling back to the cache when offline.
-const CACHE_NAME = 'forge-cache-v2';
+const CACHE_NAME = 'forge-cache-v3';
+// Relative paths so this works under a sub-path like /Forge/ on GitHub Pages.
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json'
+  './',
+  './index.html',
+  './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
@@ -25,9 +26,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
-  // Only handle same-origin GETs; never cache API or OAuth traffic.
-  if (request.method !== 'GET' || url.origin !== self.location.origin ||
-      url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/')) {
+  // Only handle same-origin GETs.
+  if (request.method !== 'GET' || url.origin !== self.location.origin) {
     return;
   }
   event.respondWith(
@@ -39,6 +39,6 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match('/index.html')))
+      .catch(() => caches.match(request).then((cached) => cached || caches.match('./index.html')))
   );
 });

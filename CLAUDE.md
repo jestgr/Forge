@@ -14,9 +14,8 @@
 - Never print secret values — mask them.
 
 ## Project quick facts
-- Stack: React 19 + Vite 6 + Tailwind 4 front end, Express server (`server.ts`) for Google Fit OAuth/sync, Gemini via `@google/genai`.
-- Dev: `npm install && npm run dev` (tsx server.ts --dev, port 3000, Vite middleware).
-- Build/run: `npm run build` → `dist/` + `dist/server.cjs`; `npm start`.
-- Type-check: `npm run lint`.
-- Env vars: `GEMINI_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_URL`.
-- Note: port 3000 is already used by Karakeep on LXC 100.
+- Static React 19 + Vite 6 + Tailwind 4 PWA. No backend; all data in browser localStorage (Export/Import for backups).
+- Dev: `npm run dev` (port 3010; Karakeep owns 3000 on LXC 100). Type-check: `npm run lint`. Build: `npm run build` → `dist/`.
+- Deploy: merge to `main` → GitHub Actions (`.github/workflows/deploy.yml`) → GitHub Pages at https://jestgr.github.io/Forge/. Paths must stay relative (`./`) because the site lives under `/Forge/`.
+- Google Fit + AI Coach are switched off (`FIT_ENABLED` / `AI_ENABLED` in `src/App.tsx`); server code is on branch `feat/cloud-run`.
+- Never commit Forge backup JSON files (personal workout data).
