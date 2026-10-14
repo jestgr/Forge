@@ -61,7 +61,7 @@ import {
   Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GoogleGenAI, Type } from "@google/genai";
+import { getCoachAdvice } from './services/geminiService';
 import { BASE_EXERCISES, PROGRESSION_PLANS } from './constants';
 import { 
   WorkoutSession, 
@@ -78,16 +78,6 @@ import {
 
 // Storage keys
 const STORAGE_KEY = 'forge_workout_state';
-const getAiClient = () => {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return null;
-  try {
-    return new GoogleGenAI({ apiKey: key });
-  } catch (e) {
-    console.warn("Could not initialize GoogleGenAI:", e);
-    return null;
-  }
-};
 
 const SESSION_TYPES = [
   'Lower Body',
@@ -1236,18 +1226,14 @@ export default function App() {
       const hist = getExerciseHistory(ex.templateId);
       const dataStr = hist.map(h => `{date: ${new Date(h.date).toLocaleDateString()}, value: ${h.display}}`).join(', ');
       
-      const ai = getAiClient();
-      if (!ai) {
+      const goal = `${ex.targetSets ? `Goal: ${ex.targetSets} sets` : ''} ${ex.targetReps ? `of ${ex.targetReps} reps` : ''} ${ex.targetDuration ? `target ${formatTime(ex.targetDuration)}` : ''}`;
+      const advice = await getCoachAdvice(ex.name, dataStr, goal);
+      if (advice === null) {
         setAiAdvice(prev => ({ ...prev, [ex.id]: "Add GEMINI_API_KEY to your .env to enable AI Coach advice." }));
         return;
       }
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Analyze this exercise data for "${ex.name}" and provide 1-2 sentences of specific coaching advice (plateau detection, progression tips, VO2 max optimization, or form cues). Data: [${dataStr}]. ${ex.targetSets ? `Goal: ${ex.targetSets} sets` : ''} ${ex.targetReps ? `of ${ex.targetReps} reps` : ''} ${ex.targetDuration ? `target ${formatTime(ex.targetDuration)}` : ''}. Keep it professional and concise.`,
-      });
-      
-      setAiAdvice(prev => ({ ...prev, [ex.id]: response.text }));
+      setAiAdvice(prev => ({ ...prev, [ex.id]: advice }));
     } catch (err) {
       console.error("AI Error:", err);
       setAiAdvice(prev => ({ ...prev, [ex.id]: "Unable to analyze at this moment. Keep pushing!" }));

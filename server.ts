@@ -5,6 +5,7 @@ import { createServer as createViteServer } from "vite";
 import { OAuth2Client } from "google-auth-library";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
+import { GoogleGenAI, Type } from "@google/genai";
 
 dotenv.config();
 
@@ -461,6 +462,77 @@ app.get("/api/fit/sync", async (req, res) => {
   } catch (error) {
     console.error("Google Fit Fetch Error:", error);
     res.status(500).json({ error: "Failed to fetch data from Google Fit" });
+  }
+});
+
+// AI workout generation (runs server-side so GEMINI_API_KEY never reaches the browser)
+app.post("/api/ai/workout", async (req, res) => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return res.status(503).json({ error: "GEMINI_API_KEY is not set." });
+
+  const goal = typeof req.body?.goal === "string" ? req.body.goal.trim().slice(0, 200) : "";
+  const time = Number(req.body?.time);
+  if (!goal || !Number.isFinite(time) || time < 5 || time > 240) {
+    return res.status(400).json({ error: "Provide a goal and a time between 5 and 240 minutes." });
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: key });
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Generate a workout routine for "${goal}" that takes approximately ${Math.round(time)} minutes.`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            exercises: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  targetSets: { type: Type.NUMBER },
+                  targetReps: { type: Type.NUMBER },
+                  weight: { type: Type.NUMBER, description: "Suggested starting weight in lbs" },
+                },
+                required: ["name", "targetSets", "targetReps", "weight"]
+              }
+            }
+          },
+          required: ["name", "exercises"]
+        }
+      }
+    });
+    res.json(JSON.parse(response.text ?? "{}"));
+  } catch (e: any) {
+    console.error("Gemini workout generation failed:", e?.message || e);
+    res.status(502).json({ error: "Workout generation failed." });
+  }
+});
+
+// AI Coach advice for a single exercise (prompt is built here, not by the client)
+app.post("/api/ai/advice", async (req, res) => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return res.status(503).json({ error: "GEMINI_API_KEY is not set." });
+
+  const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const exerciseName = str(req.body?.exerciseName, 100);
+  const history = str(req.body?.history, 4000);
+  const goal = str(req.body?.goal, 200);
+  if (!exerciseName) return res.status(400).json({ error: "exerciseName is required." });
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: key });
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Analyze this exercise data for "${exerciseName}" and provide 1-2 sentences of specific coaching advice (plateau detection, progression tips, VO2 max optimization, or form cues). Data: [${history}]. ${goal}. Keep it professional and concise.`,
+    });
+    res.json({ advice: response.text ?? "" });
+  } catch (e: any) {
+    console.error("Gemini advice failed:", e?.message || e);
+    res.status(502).json({ error: "Advice generation failed." });
   }
 });
 

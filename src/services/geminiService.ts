@@ -3,43 +3,27 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { GoogleGenAI, Type } from "@google/genai";
-
-function getAiClient() {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error("GEMINI_API_KEY is not set.");
-  return new GoogleGenAI({ apiKey: key });
+// Calls the server, which holds GEMINI_API_KEY (see /api/ai/workout in server.ts).
+export async function generateWorkout(goal: string, time: number) {
+  const resp = await fetch("/api/ai/workout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ goal, time }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || `Workout generation failed (${resp.status}).`);
+  return data;
 }
 
-export async function generateWorkout(goal: string, time: number) {
-  const ai = getAiClient();
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Generate a workout routine for "${goal}" that takes approximately ${time} minutes.`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          name: { type: Type.STRING },
-          exercises: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                targetSets: { type: Type.NUMBER },
-                targetReps: { type: Type.NUMBER },
-                weight: { type: Type.NUMBER, description: "Suggested starting weight in lbs" },
-              },
-              required: ["name", "targetSets", "targetReps", "weight"]
-            }
-          }
-        },
-        required: ["name", "exercises"]
-      }
-    }
+// Returns null when the server has no GEMINI_API_KEY configured.
+export async function getCoachAdvice(exerciseName: string, history: string, goal: string): Promise<string | null> {
+  const resp = await fetch("/api/ai/advice", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ exerciseName, history, goal }),
   });
-
-  return JSON.parse(response.text);
+  if (resp.status === 503) return null;
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || `Advice request failed (${resp.status}).`);
+  return data.advice;
 }
