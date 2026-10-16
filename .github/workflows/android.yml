@@ -61,11 +61,15 @@ jobs:
           (cd android && ./gradlew --no-daemon assembleRelease)
           rm -f "$RUNNER_TEMP/forge.p12"
           cp android/app/build/outputs/apk/release/app-release.apk forge.apk
-      - name: Check signature
+      - name: Check signature (must be the Forge key)
         shell: bash
         run: |
-          BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
-          "$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs forge.apk | grep -E "Signer #1 certificate (DN|SHA-256)"
+          set -euo pipefail
+          # Public fingerprint of the Forge signing certificate (see /etc/homelab/secrets.yaml).
+          EXPECTED="0D:94:E3:28:A6:B8:5B:E5:58:39:3B:28:BB:D6:DD:CC:45:76:B2:A3:E1:02:79:04:A2:BC:7B:4C:BC:23:AD:90"
+          OUT=$(keytool -printcert -jarfile forge.apk 2>&1 || true)
+          echo "$OUT" | grep -E "Owner:|SHA256:" || echo "$OUT"
+          echo "$OUT" | grep -q "SHA256: $EXPECTED" || { echo "::error::APK is not signed with the Forge key"; exit 1; }
       - name: Publish on GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

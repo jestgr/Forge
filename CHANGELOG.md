@@ -125,3 +125,7 @@
 ## 2026-10-16 — Fix: Android version number in Gradle (branch `rework`)
 - `versionCode` / `versionName` written as assignments (Groovy read the old line as a method call → "Value is null").
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — Fix: APK signature check (branch `rework`)
+- Signature check now uses `keytool -printcert -jarfile` and compares the certificate's SHA-256 fingerprint with the Forge key's (public value, in the workflow).
+- Rollback: `git revert <this commit>`
