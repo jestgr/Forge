@@ -94,13 +94,13 @@ export const SECTION_WINDOWS = {
   cardio: { min: 20, aim: 25, max: 30 },
 };
 
-/** Rest between sets when an exercise has none set (Jeff, 2026-10-16). */
+/** Rest between sets when an exercise has none set (Jeff, 2026-10-16); mobility and posture use 15 s. */
 export const DEFAULT_REST_SEC = 90;
 /** Defaults when an exercise has no targets. */
 export const DEFAULT_TARGETS = {
   resistance: { sets: 3, reps: 10, restSec: DEFAULT_REST_SEC, durationSec: null },
-  mobility: { sets: 1, reps: null, restSec: DEFAULT_REST_SEC, durationSec: 60 },
-  posture: { sets: 2, reps: 12, restSec: DEFAULT_REST_SEC, durationSec: null },
+  mobility: { sets: 1, reps: null, restSec: 15, durationSec: 60 },
+  posture: { sets: 2, reps: 12, restSec: 15, durationSec: null },
   cardio: { sets: 1, reps: null, restSec: 0, durationSec: 20 * 60 },
 };
 /** An untimed working set takes about this long. */

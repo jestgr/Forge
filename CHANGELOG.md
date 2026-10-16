@@ -88,3 +88,7 @@
 - Session ≈ 45 min before cardio: Mobility ~10, Posture ~5, Resistance ~30 (25–35; was 25–45). Per exercise: target sets × (duration or ~20 s per untimed set) + rest between sets (exercise's, else 90 s) + 2 min to move to the next exercise. Exercises are only added if they bring a section closer to its aim. Rest timer between sets uses the same 90 s default. (D30)
 - Checked: built-ins 46–48 min per split; Jeff's real library (20 tries per split) 41–48 min before cardio; real-data run of every split still error-free. Tests: 67 pass (new: session ≈ 45 min for every split). SW cache `forge-v11`.
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — Mobility / posture default rest 15 s (branch `rework`)
+- Mobility and posture exercises without a rest use 15 s between sets (resistance stays 90 s) (D31). Jeff's real library: 3 mobility + 2 posture + ~5 resistance, 42–50 min before cardio; real-data run of every split error-free. Tests: 67 pass. SW cache `forge-v12`.
+- Rollback: `git revert <this commit>`

@@ -13,7 +13,8 @@ const byCat = (secs) => Object.fromEntries(secs.map((s) => [s.category, s.items]
 test('estimate: sets × work + rest between sets + 2 min to move on', () => {
   assert.equal(estimateSec({ sets: 3, reps: 10, restSec: 60 }, 'resistance'), 3 * 20 + 2 * 60 + 120);
   assert.equal(estimateSec({ sets: 3, reps: '8-12' }, 'resistance'), 3 * 20 + 2 * 90 + 120, 'no rest set → 90 s');
-  assert.equal(estimateSec({ sets: 2, durationSec: 60 }, 'mobility'), 2 * 60 + 90 + 120);
+  assert.equal(estimateSec({ sets: 2, durationSec: 60 }, 'mobility'), 2 * 60 + 15 + 120, 'mobility default rest 15 s');
+  assert.equal(estimateSec({ sets: 2, reps: 12 }, 'posture'), 2 * 20 + 15 + 120, 'posture default rest 15 s');
   assert.equal(estimateSec({ sets: 4, reps: 5, restSec: 180 }, 'resistance'), 4 * 20 + 3 * 180 + 120, 'target sets respected');
   assert.equal(estimateSec({ durationSec: 1500 }, 'cardio'), 1500 + 120);
   assert.deepEqual(effectiveTargets({ sets: null, reps: null, restSec: null, durationSec: null }, 'resistance'), { sets: 3, reps: 10, restSec: 90, durationSec: null });
