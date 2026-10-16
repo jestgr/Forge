@@ -72,3 +72,10 @@
 - Tests: 64 pass (smoke test now also covers week tiles, split tracker, steps entry, history detail + credit override). SW cache `forge-v9`.
 - Phone check (preview): Today shows your migrated week; tap Steps → enter today's steps; History → older months show your April–September sessions; open one → change "counts as", then back to automatic.
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — Rework phase 7: polish + real-data run (branch `rework`)
+- Phone Back button: always closes the top sheet, also when one sheet closes and another opens right after (e.g. confirm → picker); test added.
+- Log-set form never opens empty (falls back to 10 reps / 60 s); default rest for resistance exercises without a target 90 s (D28, D29).
+- Real-data run (local only, nothing committed): booted the app with Jeff's real old-Forge backup as old-app storage → 26 sessions, 66 custom exercises brought over; every screen and all 26 session details render; built, logged and saved a workout for every split × a different equipment mode; no errors. `tools/check-migration.mjs` on the same backup: RESULT OK — nothing lost (26/26 sessions, 179/179 entries, 259/259 sets, totals identical).
+- Tests: 66 pass. SW cache `forge-v10`.
+- Rollback: `git revert <this commit>`

@@ -13,9 +13,9 @@ const byCat = (secs) => Object.fromEntries(secs.map((s) => [s.category, s.items]
 test('estimate: sets × (work + rest) + setup', () => {
   assert.equal(estimateSec({ sets: 3, reps: 10, restSec: 60 }, 'resistance'), 3 * (40 + 60) + 30);
   assert.equal(estimateSec({ sets: 2, durationSec: 60 }, 'mobility'), 2 * (60 + 15) + 30);
-  assert.equal(estimateSec({ reps: '8-12' }, 'resistance'), 3 * (40 + 60) + 30);
+  assert.equal(estimateSec({ reps: '8-12' }, 'resistance'), 3 * (40 + 90) + 30);
   assert.equal(estimateSec({ durationSec: 1500 }, 'cardio'), 1500 + 30);
-  assert.deepEqual(effectiveTargets({ sets: null, reps: null, restSec: null, durationSec: null }, 'resistance'), { sets: 3, reps: 10, restSec: 60, durationSec: null });
+  assert.deepEqual(effectiveTargets({ sets: null, reps: null, restSec: null, durationSec: null }, 'resistance'), { sets: 3, reps: 10, restSec: 90, durationSec: null });
 });
 
 for (const split of /** @type {any[]} */ (['lower', 'chest-shoulders', 'back-biceps', 'core'])) {

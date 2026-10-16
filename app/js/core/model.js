@@ -96,7 +96,7 @@ export const SECTION_WINDOWS = {
 
 /** Defaults when an exercise has no targets. */
 export const DEFAULT_TARGETS = {
-  resistance: { sets: 3, reps: 10, restSec: 60, durationSec: null },
+  resistance: { sets: 3, reps: 10, restSec: 90, durationSec: null },
   mobility: { sets: 1, reps: null, restSec: 15, durationSec: 60 },
   posture: { sets: 2, reps: 12, restSec: 30, durationSec: null },
   cardio: { sets: 1, reps: null, restSec: 0, durationSec: 20 * 60 },

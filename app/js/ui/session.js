@@ -153,7 +153,7 @@ function prefill(item, category, sessionId) {
   const v = {};
   for (const f of fields) {
     const k = fieldKey(f);
-    v[f] = lastHere?.[k] ?? prev?.[k] ?? (f === 'reps' ? repsNumber(t.reps) : f === 'time' ? t.durationSec : null) ?? '';
+    v[f] = lastHere?.[k] ?? prev?.[k] ?? (f === 'reps' ? (repsNumber(t.reps) ?? 10) : f === 'time' ? (t.durationSec || 60) : null) ?? '';
   }
   if (tip?.weight && fields.includes('weight')) v.weight = tip.weight;
   return v;

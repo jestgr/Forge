@@ -1,6 +1,6 @@
 # Forge rework — plan
 
-Status: **approved by Jeff 2026-10-16**; building on `rework`. Brief: [REWORK.md](REWORK.md). Decisions log: [DECISIONS.md](DECISIONS.md).
+Status: **approved by Jeff 2026-10-16**; phases 0–7 built on `rework` (2026-10-16); waiting for phone test and Jeff's "merge". Brief: [REWORK.md](REWORK.md). Decisions log: [DECISIONS.md](DECISIONS.md).
 
 ---
 

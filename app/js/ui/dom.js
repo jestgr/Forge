@@ -80,10 +80,22 @@ export function icon(name, cls = 'icon') {
 
 /** @type {{overlay: HTMLElement, render: () => void, onClose?: () => void}[]} */
 const sheets = [];
-let closingByCode = 0;
+// history.back() is asynchronous: while our own "back" is in flight, a new
+// sheet's history entry is held and pushed once that back has landed.
+let pendingBacks = 0;
+let heldPushes = 0;
+
+function pushEntry() {
+  if (pendingBacks > 0) heldPushes++;
+  else history.pushState({ sheet: true }, '');
+}
 
 window.addEventListener('popstate', () => {
-  if (closingByCode > 0) { closingByCode--; return; }
+  if (pendingBacks > 0) {
+    pendingBacks--;
+    if (pendingBacks === 0) for (; heldPushes > 0; heldPushes--) history.pushState({ sheet: true }, '');
+    return;
+  }
   const top = sheets.pop();
   if (top) { top.overlay.remove(); top.onClose?.(); }
 });
@@ -104,7 +116,8 @@ export function openSheet(build, opts = {}) {
     sheets.splice(i, 1);
     overlay.remove();
     entry.onClose?.();
-    closingByCode++;
+    if (heldPushes > 0) { heldPushes--; return; } // its entry was never pushed
+    pendingBacks++;
     history.back();
   };
   entry.render = () => {
@@ -114,7 +127,7 @@ export function openSheet(build, opts = {}) {
   };
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   sheets.push(entry);
-  history.pushState({ sheet: sheets.length }, '');
+  pushEntry();
   entry.render();
   document.getElementById('layers').append(overlay);
   return close;
