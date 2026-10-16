@@ -40,3 +40,10 @@
 - Tests: 29 pass (migration, backup round-trip, goals incl. week edges, plans, service worker). `tools/check-migration.mjs` on Jeff's real backup (14 Oct): 26/26 sessions, 179/179 entries, 259/259 sets, reps, weight volume and seconds identical, 66/66 custom exercises — "nothing lost". SW cache `forge-v5`.
 - Phone check (preview): Settings shows your sessions count; Back up now downloads a file; Restore that file → same counts.
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — Rework phase 3: exercise library (branch `rework`)
+- Library tab: search, filter by category / split / equipment, "Show hidden"; rows show categories, splits and targets. New / edit sheet with multi-select category, split (none = any; Upper = both upper-body days), equipment, logged fields; target sets / reps ("10" or "8-12") / rest / duration; notes; demo link. Built-ins: edit (marked "edited"), revert, hide / unhide; your own: delete (past sessions keep their records).
+- Same list is the picker used later by Switch / +ADD (filters preset, removable).
+- Tests: 29 pass; lint clean. SW cache `forge-v6`.
+- Phone check (preview): search "squat"; filter Lower + Minimal gym; add an exercise, edit it, delete it; hide a built-in, find it under Show hidden, unhide.
+- Rollback: `git revert <this commit>`
