@@ -23,3 +23,12 @@
 - `.gitignore`: also ignore `forge-backup*.json` and `*backup*.json` (personal data).
 - Docs only; no app change, no SW bump needed.
 - Rollback: `git revert <this commit>` (or, before merge, `git branch -D rework`)
+
+## 2026-10-16 — Rework phase 1: plain-JS app shell + preview deploy (branch `rework`)
+- Removed the React/Vite/Tailwind app (`src/`, `public/`, `index.html`, `vite.config.ts`, `metadata.json`) and its packages; dev tools left: TypeScript (type-check only) + `node --test`.
+- New `app/` folder (published as-is): dark theme, bottom nav (Today / Library / History / Settings), IndexedDB layer (`forge`, or `forge-preview` for the test copy), in-memory store, offline-first service worker with "Update ready" banner (takes over from the old app's worker on first open), own icons, manifest keeps the old install id.
+- Deploy workflow now publishes `main` at `/Forge/` and `rework` at `/Forge/preview/` (preview has its own install name "Forge Preview").
+- README and CLAUDE.md updated for the new setup. SW cache: `forge-v4`.
+- Tested: `npm run check` (lint + 3 tests) pass; workflow assemble step simulated locally on a clone (old main builds as before, preview copied + renamed); all preview files served with correct types. Not yet opened in a phone browser.
+- Phone check: open https://jestgr.github.io/Forge/preview/ → PREVIEW ribbon, 4 tabs, Settings shows version `forge-v4`; install it; turn on airplane mode and reopen → still works.
+- Rollback: `git revert <this commit>`
