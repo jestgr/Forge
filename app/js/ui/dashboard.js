@@ -1,10 +1,10 @@
-// Today: weekly goals + start buttons (filled in phase 4–6).
-import { h } from './dom.js';
+// Today: start buttons (weekly goals are added in phase 6).
+import { h, icon } from './dom.js';
+import { openStartSheet } from './session.js';
 
 export function render(root) {
   root.append(
     h('div', { class: 'screen-head' }, h('h1', null, 'Forge')),
-    h('div', { class: 'card stack' },
-      h('h2', null, 'New Forge is being built'),
-      h('p', { class: 'muted' }, 'This is the preview shell (phase 1). Workouts arrive in later phases.')));
+    h('div', { class: 'stack' },
+      h('button', { class: 'btn btn-primary btn-big', onclick: openStartSheet }, icon('play'), 'Begin next session')));
 }

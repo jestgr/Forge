@@ -3,7 +3,7 @@
 // A new version installs in the background and waits until the app says
 // "reload" (update banner), so a running workout is never interrupted.
 // Bump CACHE on every deployable change (must equal VERSION in js/version.js).
-const CACHE = 'forge-v6';
+const CACHE = 'forge-v7';
 
 // Every file in app/ except this one (a test checks the list is complete).
 const ASSETS = [
@@ -25,9 +25,14 @@ const ASSETS = [
   './js/core/migrate.js',
   './js/core/goals.js',
   './js/core/backup.js',
+  './js/core/generator.js',
+  './js/core/progress.js',
+  './js/core/clock.js',
   './js/platform/db.js',
   './js/ui/dom.js',
   './js/ui/dashboard.js',
+  './js/ui/session.js',
+  './js/ui/sessionbar.js',
   './js/ui/library.js',
   './js/ui/history.js',
   './js/ui/settings.js',

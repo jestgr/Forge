@@ -47,3 +47,11 @@
 - Tests: 29 pass; lint clean. SW cache `forge-v6`.
 - Phone check (preview): search "squat"; filter Lower + Minimal gym; add an exercise, edit it, delete it; hide a built-in, find it under Show hidden, unhide.
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — Rework phase 4: Begin Next Session, logging, session timer (branch `rework`)
+- `core/generator.js`: sections filled by estimated time (Mobility ~10, Posture ~5, Resistance 25–45 unless Pure Cardio, Cardio 20–30 if chosen), not-done-recently first, split + equipment respected, active plan's cardio first. `core/progress.js`: last-10 summary + progression suggestion. `core/clock.js`: total / work / rest / pause from timestamps.
+- Start sheet (split, cardio, equipment — remembered / suggested). Session screen: sections with +ADD, Re-roll (resistance), each exercise Switch / Remove / big "Log set"; tap for targets, notes, demo, last 10 times, suggestion. Set logging with big ± steppers pre-filled from last time (+ suggested weight); tap a logged set to edit / delete. Finish shows total / work / rest and what the session earns; Discard.
+- Session bar on every tab: total time, WORK / REST countdown, Skip rest, pause / start.
+- Tests: 48 pass (generator windows for every split, equipment, Pure Cardio, recency, trimming, determinism; progress; clock). SW cache `forge-v7`. UI not yet run in a browser.
+- Phone check (preview): Begin next session → Lower + cardio + Full gym; check sections and times; Switch and +ADD; log 2 sets (rest countdown starts); tap an exercise (history from your migrated data); Finish → toast says what it counted as.
+- Rollback: `git revert <this commit>`

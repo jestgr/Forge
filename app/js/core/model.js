@@ -23,6 +23,7 @@
  * @typedef {{ id: string, kind: 'workout'|'fallback', name?: string, split: Split|null, includeCardio: boolean,
  *   equipment: Equip|null, startedAt: number, endedAt: number|null, pausedMs: number, pausedAt?: number|null,
  *   status: 'active'|'done', sections: Section[], creditOverride?: Partial<Credit>|null,
+ *   clockStartedAt?: number|null, workSince?: number|null, workMs?: number, restMs?: number,
  *   rest?: { startedAt: number, targetSec: number }|null, lastSetAt?: number|null,
  *   planWeek?: number|null,
  *   source: 'forge'|'migrated', legacy?: any }} Session

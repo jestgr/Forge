@@ -9,6 +9,8 @@ import * as library from './ui/library.js';
 import * as history from './ui/history.js';
 import * as settings from './ui/settings.js';
 import { ensureData } from './setup.js';
+import * as session from './ui/session.js';
+import { startBar } from './ui/sessionbar.js';
 
 /** Routes: hash → screen module with render(root). */
 const ROUTES = {
@@ -34,7 +36,8 @@ export function route() {
 let lastRoute = null;
 function render() {
   const r = route();
-  const mod = ROUTES[r] || dashboard;
+  // Today shows the workout while one is running.
+  const mod = (r === '' || !ROUTES[r]) && store.activeSession() ? session : (ROUTES[r] || dashboard);
   const keepScroll = r === lastRoute;
   const y = window.scrollY;
   screenEl.replaceChildren();
@@ -91,6 +94,7 @@ async function boot() {
   store.subscribe(render);
   window.addEventListener('hashchange', render);
   render();
+  startBar();
   if (message) toast(message, 6000);
   setupServiceWorker();
   persist().then((ok) => store.state.settings.persisted !== ok && store.setSetting('persisted', ok));
