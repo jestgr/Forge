@@ -154,6 +154,39 @@ test('fallback: start and stop with nothing done saves nothing', async () => {
   assert.ok(has('nothing saved'));
 });
 
+test('dashboard: week tiles, split tracker, steps entry', async () => {
+  g.setHash('#/');
+  await tick(20);
+  assert.ok(has('This week') && has('Heavy') && has('Zone 2') && has('HIIT') && has('Splits this week'));
+  assert.ok(body.querySelectorAll('.split-cell.done').length >= 1, 'today’s Lower Body ticks the split tracker');
+  await click('Steps & sleep');
+  const inputs = body.querySelectorAll('input');
+  inputs[inputs.length - 2].dispatch('input', { target: { value: '9001' } });
+  await click('Save');
+  await tick(30);
+  assert.ok(has('9,001'));
+});
+
+test('history: detail, change what it counts as, back to automatic', async () => {
+  g.setHash('#/history');
+  await tick(20);
+  assert.ok(body.querySelector('.cal'));
+  body.querySelectorAll('.list-row')[0].click();
+  await tick(30);
+  assert.ok(has('Counts as (automatic)'));
+  const s = store.state.sessions[0];
+  const zone2 = byText(body, 'Zone 2', 'button').pop();
+  zone2.click();
+  await tick(30);
+  assert.ok(store.state.sessions.find((x) => x.id === s.id).creditOverride, 'override saved');
+  assert.ok(has('changed by hand'));
+  await click('Back to automatic');
+  await tick(30);
+  assert.equal(store.state.sessions.find((x) => x.id === s.id).creditOverride, null);
+  history.back();
+  await tick(30);
+});
+
 test('other tabs render', async () => {
   g.setHash('#/library');
   await tick(20);

@@ -64,3 +64,11 @@
 - Tests: 62 pass, incl. new UI smoke test (boots the real app in a fake browser with old-Forge data, builds a workout, logs / edits sets, switch / add / remove / re-roll, 4×4, finish, fallback, every tab). SW cache `forge-v8`.
 - Phone check (preview): Settings → Test cue (sound + buzz); start a session, log a set → 3-2-1 beeps at the end of rest; Begin 4×4 → screen stays on, skip through segments; Dashboard → 6-minute fallback.
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — Rework phase 6: dashboard goals, history, health data (branch `rework`)
+- Today: "This week" (Sun–Sat) tiles Heavy x/2, Zone 2 x/2, HIIT x/1, Steps today (goal 8,000 + days met); split tracker (Lower, Chest/Shoulders, Back/Biceps, Core); fallback count; active plan week; backup reminder after 14 days; recent sessions. Steps & sleep entry (today / yesterday / any day from History).
+- History: simple month calendar (dots per session, blue = fallback; tap a day for its sessions + steps/sleep) and session list ("Show more"). Session detail: time, work/rest, exercises + sets, 4×4 result, what it counts as (automatic, or changed by hand + back to automatic), delete.
+- `platform/health.js`: health-source interface + manual source. `docs/HEALTH-DATA.md`: Garmin Venu 2 options (recommended next: homelab job → file → Forge import), file format, HR-based activity detection. No source implemented (per brief).
+- Tests: 64 pass (smoke test now also covers week tiles, split tracker, steps entry, history detail + credit override). SW cache `forge-v9`.
+- Phone check (preview): Today shows your migrated week; tap Steps → enter today's steps; History → older months show your April–September sessions; open one → change "counts as", then back to automatic.
+- Rollback: `git revert <this commit>`
