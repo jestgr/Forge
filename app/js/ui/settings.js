@@ -8,17 +8,23 @@ import { mergeById, builtinExercises, migrateLegacy } from '../core/migrate.js';
 import { planWeek, validatePlan } from '../core/plans.js';
 import { download, fmtDate, dateKey, fromDateKey, weekStart } from '../core/util.js';
 import { readOldState } from '../setup.js';
+import { isNative } from '../platform/native.js';
 import { GOALS } from '../core/model.js';
 import { cue, unlockAudio } from '../platform/cues.js';
 import { supported as wakeSupported } from '../platform/wakelock.js';
 
 const { state } = store;
 
-export function exportBackup() {
+export async function exportBackup() {
   const now = Date.now();
-  download(backupFilename(now), JSON.stringify(makeBackup(store.snapshot(), now)));
-  store.setSetting('lastBackupAt', now);
-  toast('Backup saved to Downloads');
+  try {
+    await download(backupFilename(now), JSON.stringify(makeBackup(store.snapshot(), now)));
+  } catch (e) {
+    toast('Backup not saved: ' + (e?.message || e), 5000);
+    return;
+  }
+  await store.setSetting('lastBackupAt', now);
+  toast(isNative() ? 'Backup ready — pick where to save it' : 'Backup saved to Downloads');
 }
 
 /** Pick a file and restore it. */
@@ -48,7 +54,7 @@ async function restoreText(text, name) {
     h('h2', null, 'Replace everything?'),
     h('p', null, `This phone will then hold exactly what’s in ${name}: ${describe(r.data)}.`),
     h('p', { class: 'muted small' }, `Now on this phone: ${describe(store.snapshot())}.`),
-    h('button', { class: 'btn btn-primary btn-block', onclick: async () => { exportBackup(); close(); await store.replaceAll(r.data); toast('Restored'); } },
+    h('button', { class: 'btn btn-primary btn-block', onclick: async () => { await exportBackup(); close(); await store.replaceAll(r.data); toast('Restored'); } },
       'Save a backup of this phone, then replace'),
     h('button', { class: 'btn btn-danger btn-block', onclick: async () => { close(); await store.replaceAll(r.data); toast('Restored'); } }, 'Replace without backup'),
     h('button', { class: 'btn btn-block', onclick: close }, 'Cancel')));

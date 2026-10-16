@@ -12,6 +12,7 @@ import { ensureData } from './setup.js';
 import * as session from './ui/session.js';
 import { startBar } from './ui/sessionbar.js';
 import { keepAwake, allowSleep } from './platform/wakelock.js';
+import { isNative } from './platform/native.js';
 
 /** Routes: hash → screen module with render(root). */
 const ROUTES = {
@@ -53,7 +54,8 @@ function render() {
 
 // ---------- service worker updates ----------
 function setupServiceWorker() {
-  if (!('serviceWorker' in navigator)) return;
+  // The Android app ships every file inside the APK; updates come as a new APK.
+  if (isNative() || !('serviceWorker' in navigator)) return;
   let reloading = false;
   let asked = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {

@@ -86,7 +86,17 @@ export function pos(v) {
   return typeof n === 'number' && isFinite(n) && n > 0 ? n : undefined;
 }
 
-export function download(filename, text, type = 'application/json') {
+/**
+ * Save a text file for the user. Browser: normal download. Android app: write it,
+ * then open the Share sheet (Save to Files / Drive / …).
+ */
+export async function download(filename, text, type = 'application/json') {
+  const C = /** @type {any} */ (globalThis).Capacitor;
+  if (C?.isNativePlatform?.() && C.Plugins?.Filesystem && C.Plugins?.Share) {
+    const { uri } = await C.Plugins.Filesystem.writeFile({ path: filename, data: text, directory: 'CACHE', encoding: 'utf8' });
+    await C.Plugins.Share.share({ title: filename, files: [uri] });
+    return;
+  }
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = document.createElement('a');
   a.href = url;

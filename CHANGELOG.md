@@ -105,3 +105,9 @@
 ## 2026-10-16 — Garmin plan v2 (branch `rework`, docs only)
 - Per Jeff: no unofficial Garmin login; Android-side approach. `docs/HEALTH-DATA.md` v2: read Health Connect (Garmin writes there; Google Fit reads there; Google Fit APIs close end of 2026); recommend wrapping Forge as a native APK (Capacitor, built on GitHub Actions) instead of a throw-away helper; steps N1–N4; 4 questions. Nothing built.
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — Android app prep (N1 part 1) (branch `rework`)
+- App code ready for the Capacitor shell: `platform/native.js` (detects the Android app, reaches native plugins); in the app, Backup writes the file and opens the Share sheet (Files / Drive), screen-awake uses the KeepAwake plugin, vibration uses Haptics, no service worker. The web app behaves exactly as before.
+- **Host change (outside this repo):** created the APK signing key (PKCS12, alias `forge`, RSA 4096, valid to 2056) and stored it only in `/etc/homelab/secrets.yaml` as `forge_android_key_alias`, `forge_android_keystore_password`, `forge_android_keystore_b64`. Backup of the previous file: `/etc/homelab/secrets.yaml.bak-<timestamp>`. Rollback: restore that backup (`cp -p /etc/homelab/secrets.yaml.bak-<timestamp> /etc/homelab/secrets.yaml`) — only before any APK was signed with the key.
+- Tests: 71 pass (new: native paths). SW cache `forge-v14`.
+- Rollback (code): `git revert <this commit>`
