@@ -1,6 +1,6 @@
 # Forge rework — plan
 
-Status: **draft, waiting for Jeff's OK** (2026-10-16). Brief: [REWORK.md](REWORK.md). Decisions log: [DECISIONS.md](DECISIONS.md).
+Status: **approved by Jeff 2026-10-16**; building on `rework`. Brief: [REWORK.md](REWORK.md). Decisions log: [DECISIONS.md](DECISIONS.md).
 
 ---
 
@@ -47,8 +47,8 @@ Status: **draft, waiting for Jeff's OK** (2026-10-16). Brief: [REWORK.md](REWORK
 | C13 | Exercise card: last 10 times + progression | Chart of last 50 sets + last 5 | Concise last-10 list + one-line suggestion; no chart library |
 
 **Not in the brief — defaults (tell me if you disagree):**
-- **Keep:** history list + month calendar + session detail (simpler); built-in "revert / restore defaults"; RPE as an optional tracking field; Speed / Incline / Distance / HR fields; the 12-week VO2 plan as an optional setting that only *suggests* the cardio exercise for the week (C3 needs its state anyway); pause on the session timer.
-- **Drop:** Aerobic Engine / efficiency index, 28-day heatmap, PR alert card, Smart Progression card, Re-roll button (Switch covers it), library-only export, charts, "Alex Johnson", Google Fit + AI code (still on `feat/cloud-run`).
+- **Keep (confirmed):** simpler history + simple month calendar + session detail; **Re-roll** for resistance; built-in "revert / restore defaults"; RPE and Speed / Incline / Distance / HR fields; pause on the session timer; the **12-week VO2 plan**, stored as data so more plans can be added later (Settings → Import plan file; format in §4).
+- **Drop (confirmed):** efficiency index / Aerobic Engine, heatmap, PR alert card, charts. Also dropped: Smart Progression card, library-only export, "Alex Johnson", Google Fit + AI code (still on `feat/cloud-run`).
 - Sleep and heart-point numbers from old data are **migrated and kept**; sleep gets manual entry; heart points are only shown in day detail if present.
 
 ## 3. Architecture
@@ -105,6 +105,7 @@ sessions   { id, kind: 'workout'|'fallback', split, includeCardio, equipment,
              credit: { heavy, zone2, hiit, split /*Split|null*/ },   // computed at finish
              source: 'forge'|'migrated', legacy?: { …original fields kept verbatim } }
 daily      { date: 'YYYY-MM-DD', steps, sleepHours, heartPoints, source: 'manual'|'migrated'|… }
+plans      { id, name, description, weeks: [{ week, focus, cardio: [exerciseId…], notes }], builtIn }
 settings   { key, value }  // lastSplit, lastCardio, lastEquipment, stepGoal, weekStart,
                            // units, plan: {id, startDate}, lastBackupAt, migratedFrom
 ```
@@ -135,16 +136,17 @@ Mapping:
 
 **Proof on real data:** `node tools/check-migration.mjs <backup>` prints counts only — sessions, exercise entries, sets, custom exercises, total reps / weight-volume / logged seconds — before and after, and fails if any differ. It runs in phase 2 and again right before merge, and the app's own Restore is then tested with the same file on the phone (preview build).
 
-## 6. Weekly goals & counting (to confirm — Q2)
+## 6. Weekly goals & counting (confirmed by Jeff 2026-10-16)
 
-Week = Monday 00:00 → Sunday 24:00 local time (today's app uses Sunday; see DECISIONS D6).
-- **Heavy** (goal ≥2): a finished workout whose split is lower, chest-shoulders, back-biceps or core **and** has ≥1 logged resistance set. Also ticks that split in the **split tracker** (goal: one each of the four; Pure Cardio doesn't count).
+Week = **Sunday 00:00 → Saturday 24:00** local time.
+- **Heavy** (goal ≥2): a finished workout whose split is lower, chest-shoulders or back-biceps **and** has ≥2 resistance exercises with at least one logged set each. No minimum time. **Core does not count as Heavy.**
+- **Split tracker** (goal: one each of Lower Body, Chest/Shoulders, Back/Biceps, Core): a finished workout of that split with ≥2 resistance exercises logged. Core counts here. Pure Cardio doesn't.
 - **HIIT** (goal 1): a session with a cardio item whose 4×4 reached the end of hard interval 4.
-- **Zone 2** (goal 2): a session with ≥20 min logged cardio time and no completed 4×4. Cardio time = logged `time` on cardio items; if none logged, time spent with the cardio section open.
-- One session can earn Heavy + Zone 2 (e.g. Lower Body + cardio) or Heavy + HIIT, but never both HIIT and Zone 2.
+- **Zone 2** (goal 2): a session with ≥20 min cardio time **or** a completed 4×4. Cardio time = logged `time` on cardio items, plus the duration of any 4×4 run; if nothing logged, time spent with the cardio section open.
+- **One session can count toward several goals** (e.g. Lower Body + 4×4 = Heavy + split + HIIT + Zone 2).
 - **Steps:** today vs 8,000, plus "days met this week".
 - **Fallback:** its own counter ("Fallbacks this week"), counts toward none of the above.
-- The session detail shows what it earned; you can override a session's credit by hand (for odd cases, and later for watch-detected activities).
+- The session detail shows what it earned; you can override a session's credit by hand.
 
 ## 7. Begin Next Session — generator
 
@@ -199,6 +201,9 @@ Exercise card tap → sheet with targets, notes, demo link, **last 10 times** (d
 - Per-phase manual phone checklist (in the CHANGELOG entry).
 - Real backup: `tools/check-migration.mjs` (prints counts only; the file is never copied into the repo).
 
-## 12. Open questions for Jeff
+## 12. Answers from Jeff (2026-10-16)
 
-See the summary in chat (Q1–Q4); answers get recorded in DECISIONS.md.
+1. Migration test uses `forge_backup_2026-10-14.json` (the file at `/root/forge-backup.json` is not a Forge backup).
+2. Counting: see §6.
+3. Preview: test copy at https://jestgr.github.io/Forge/preview/; merge to `main` only when Jeff says.
+4. Keep/drop: see §2.
