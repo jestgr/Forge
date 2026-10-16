@@ -64,12 +64,16 @@ jobs:
       - name: Check signature (must be the Forge key)
         shell: bash
         run: |
-          set -euo pipefail
-          # Public fingerprint of the Forge signing certificate (see /etc/homelab/secrets.yaml).
-          EXPECTED="0D:94:E3:28:A6:B8:5B:E5:58:39:3B:28:BB:D6:DD:CC:45:76:B2:A3:E1:02:79:04:A2:BC:7B:4C:BC:23:AD:90"
-          OUT=$(keytool -printcert -jarfile forge.apk 2>&1 || true)
-          echo "$OUT" | grep -E "Owner:|SHA256:" || echo "$OUT"
-          echo "$OUT" | grep -q "SHA256: $EXPECTED" || { echo "::error::APK is not signed with the Forge key"; exit 1; }
+          set -uo pipefail
+          # Public SHA-256 of the Forge signing certificate (key in /etc/homelab/secrets.yaml).
+          EXPECTED="0d94e328a6b85be558393b28bbd6ddcc4576b2a3e1027904a2bc7b4cbc23ad90"
+          BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          echo "build-tools $BT"
+          OUT=$("$ANDROID_HOME/build-tools/$BT/apksigner" verify --verbose --print-certs forge.apk 2>&1); RC=$?
+          echo "$OUT" | grep -vE "^WARNING" | head -20
+          [ $RC -eq 0 ] || { echo "::error::apksigner verify failed ($RC)"; exit 1; }
+          echo "$OUT" | grep -qi "certificate SHA-256 digest: $EXPECTED" || { echo "::error::APK is not signed with the Forge key"; exit 1; }
+          echo "Signed with the Forge key."
       - name: Publish on GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
