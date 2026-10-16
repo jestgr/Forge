@@ -117,3 +117,7 @@
 - New workflow `.github/workflows/android.yml`: checks + tests, `cap sync`, signed release APK, signature check, publish to GitHub Release `android-preview` (rework) / `android-latest` (main) as `forge.apk`. Pages workflow now uses Node 22.
 - **Host changes (outside this repo):** Node 22.23.3 (official tarball, SHA-256 verified) in `/opt/node22` + wrapper `/usr/local/bin/with-node22`; system Node 20 untouched. Rollback: `rm -rf /opt/node22 /usr/local/bin/with-node22`. GitHub repo secrets `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` set from `secrets.yaml` (values never shown). Rollback: `gh secret delete <name>`.
 - Tests: 71 pass. Rollback (code): `git revert <this commit>`; delete the release: `gh release delete android-preview --cleanup-tag`.
+
+## 2026-10-16 — Fix: test command for Node 22 (branch `rework`)
+- `npm test` now lists the test files (`tests/*.test.js`); Node 22 no longer accepts a folder there, which failed the GitHub builds. 71 pass on Node 20 and 22.
+- Rollback: `git revert <this commit>`
