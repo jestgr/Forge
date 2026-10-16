@@ -6,13 +6,12 @@ import * as store from '../store.js';
 import * as clock from '../core/clock.js';
 import { fmtClock } from '../core/util.js';
 import { update } from './session.js';
+import { cue } from '../platform/cues.js';
 
 const host = /** @type {HTMLElement} */ (document.getElementById('session-bar'));
 let timer = 0;
-/** Called when a rest runs out (cues hook in here). */
-let onRestEnd = () => {};
-export function setRestEndHandler(fn) { onRestEnd = fn; }
 let lastKey = '';
+let lastCount = 0;
 
 const clockEl = h('div', { class: 'clock' });
 const modeEl = h('div', { class: 'mode' });
@@ -36,7 +35,12 @@ function draw() {
   const iv = clock.interval(s, t);
   // Rest just ran out (only while watching it, not when reopening the app later).
   const key = `${s.id}:${s.rest?.startedAt ?? ''}`;
-  if (iv.restOver && iv.sec < 2 && lastKey === `${key}:rest`) onRestEnd();
+  if (iv.restOver && iv.sec < 2 && lastKey === `${key}:rest`) cue('work');
+  if (iv.mode === 'rest') {
+    const whole = Math.ceil(iv.sec);
+    if (whole <= 3 && whole >= 1 && whole !== lastCount) cue('count');
+    lastCount = whole;
+  } else lastCount = 0;
   lastKey = `${key}:${iv.mode}`;
 
   clockEl.textContent = fmtClock(clock.elapsedMs(s, t) / 1000);

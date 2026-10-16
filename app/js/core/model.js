@@ -15,7 +15,7 @@
  * @typedef {{ at: number, reps?: number, weight?: number, timeSec?: number, distance?: number,
  *   speed?: number, incline?: number, hr?: number, rpe?: number }} LoggedSet
  * @typedef {{ kind: '4x4', startedAt: number, completedAt: number|null, hardDone: number, endedAt?: number|null,
- *   pausedMs?: number, pausedAt?: number|null, cooldown?: boolean }} Protocol
+ *   pausedMs?: number, pausedAt?: number|null, skipSec?: number }} Protocol
  * @typedef {{ id: string, exerciseId: string, name: string, targets: Targets, tracking?: Field[],
  *   sets: LoggedSet[], protocol?: Protocol|null, legacy?: any }} SessionItem
  * @typedef {{ category: Category, items: SessionItem[] }} Section

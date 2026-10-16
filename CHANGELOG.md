@@ -55,3 +55,12 @@
 - Tests: 48 pass (generator windows for every split, equipment, Pure Cardio, recency, trimming, determinism; progress; clock). SW cache `forge-v7`. UI not yet run in a browser.
 - Phone check (preview): Begin next session → Lower + cardio + Full gym; check sections and times; Switch and +ADD; log 2 sets (rest countdown starts); tap an exercise (history from your migrated data); Finish → toast says what it counted as.
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — Rework phase 5: 4×4 + fallback runners, cues, screen stays on (branch `rework`)
+- Full-screen interval runner (`ui/runner.js`, `core/timeline.js`): huge countdown, auto-advance, 3-2-1 beeps, long beep + buzz on every change, pause / skip / stop; state is saved, so it survives the app being closed (reopen from the "running — open" button).
+- Every cardio exercise: "Begin 4×4 protocol" (3' warm-up, 4 × 4' hard / 3' active rest); completion is saved on the exercise (→ HIIT + Zone 2); optional 3' cool-down; restart. Finishing a session settles a still-running 4×4.
+- Dashboard: "6-minute fallback" (45 s / 15 s × squats, push-ups, lunges R, lunges L, inchworm, plank), repeat circuit, saved as a Fallback session (counts toward nothing); stopping early saves the moves done.
+- Session rest: 3-2-1 beeps and a cue when rest ends. Screen kept on (Wake Lock) during a session or runner. Settings: sound / vibration switches + Test cue.
+- Tests: 62 pass, incl. new UI smoke test (boots the real app in a fake browser with old-Forge data, builds a workout, logs / edits sets, switch / add / remove / re-roll, 4×4, finish, fallback, every tab). SW cache `forge-v8`.
+- Phone check (preview): Settings → Test cue (sound + buzz); start a session, log a set → 3-2-1 beeps at the end of rest; Begin 4×4 → screen stays on, skip through segments; Dashboard → 6-minute fallback.
+- Rollback: `git revert <this commit>`

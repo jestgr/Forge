@@ -9,6 +9,8 @@ import { planWeek, validatePlan } from '../core/plans.js';
 import { download, fmtDate, dateKey, fromDateKey, weekStart } from '../core/util.js';
 import { readOldState } from '../setup.js';
 import { GOALS } from '../core/model.js';
+import { cue, unlockAudio } from '../platform/cues.js';
+import { supported as wakeSupported } from '../platform/wakelock.js';
 
 const { state } = store;
 
@@ -145,6 +147,13 @@ export function render(root) {
           h('input', { class: 'input', type: 'number', inputmode: 'numeric', min: 1000, step: 500, value: stepGoal,
             onchange: (e) => { const v = parseInt(e.target.value, 10); if (v > 0) store.setSetting('stepGoal', v); } })),
         h('p', { class: 'faint small' }, 'Weekly: Heavy 2 · Zone 2 2 · HIIT 1 · one each of Lower, Chest/Shoulders, Back/Biceps, Core. Weeks run Sunday–Saturday.')),
+      h('div', { class: 'card stack' },
+        h('h3', null, 'Timer cues'),
+        h('div', { class: 'grid-2' },
+          h('button', { class: 'chip', 'aria-pressed': String(state.settings.sound !== false), onclick: () => store.setSetting('sound', state.settings.sound === false) }, 'Sound'),
+          h('button', { class: 'chip', 'aria-pressed': String(state.settings.vibrate !== false), onclick: () => store.setSetting('vibrate', state.settings.vibrate === false) }, 'Vibration')),
+        h('button', { class: 'btn btn-block', onclick: () => { unlockAudio(); cue('done'); } }, 'Test cue'),
+        h('p', { class: 'faint small' }, wakeSupported() ? 'The screen stays on during a session and interval timers.' : 'This browser can’t keep the screen on — set a longer screen timeout.')),
       h('div', { class: 'card stack' },
         h('h3', null, 'Training plan'),
         h('p', { class: 'muted small' }, plan ? `${plan.name} — ${wk ? `week ${wk.index + 1} of ${wk.total}: ${wk.week.focus}` : 'finished'}` : 'No plan active.'),

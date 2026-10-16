@@ -10,6 +10,10 @@ import { computeCredit, weekSummary } from '../core/goals.js';
 import { planWeek } from '../core/plans.js';
 import { fmtClock, fmtDate, fmtMinutes, repsNumber, uid, rng } from '../core/util.js';
 import { openPicker, editExercise, targetText } from './library.js';
+import { openRunner } from './runner.js';
+import { PROTOCOL_4X4, COOLDOWN } from '../core/model.js';
+import { settle } from '../core/timeline.js';
+import { unlockAudio } from '../platform/cues.js';
 
 /** @typedef {import('../core/model.js').Session} Session */
 /** @typedef {import('../core/model.js').SessionItem} SessionItem */
@@ -58,7 +62,7 @@ export function openStartSheet() {
     choice([[true, 'Yes'], [false, 'No']], 'cardio'),
     h('span', { class: 'tiny faint' }, 'Equipment'),
     choice(EQUIPMENT, 'equipment'),
-    h('button', { class: 'btn btn-primary btn-big', onclick: async () => { close(); await startSession(sel); } }, 'Build workout')),
+    h('button', { class: 'btn btn-primary btn-big', onclick: async () => { unlockAudio(); close(); await startSession(sel); } }, 'Build workout')),
   { label: 'Next session' });
 }
 
@@ -235,6 +239,62 @@ function openExerciseSheet(itemId, category) {
   }, { label: 'Exercise' });
 }
 
+// ---------- 4×4 protocol ----------
+const protoRunning = (p) => !!p && !p.completedAt && !p.endedAt;
+
+async function begin4x4(itemId) {
+  unlockAudio();
+  const t = now();
+  await update((x) => {
+    const it = findItem(x, itemId)?.item;
+    if (!it) return x;
+    it.protocol = { kind: '4x4', startedAt: t, pausedMs: 0, pausedAt: null, skipSec: 0, completedAt: null, endedAt: null, hardDone: 0 };
+    return x.clockStartedAt == null ? clock.start(x, t) : clock.resume(x, t);
+  });
+  show4x4(itemId);
+}
+
+function show4x4(itemId) {
+  const p = findItem(store.activeSession(), itemId)?.item.protocol;
+  if (!protoRunning(p)) return;
+  const patch = (fields) => update((x) => { const q = findItem(x, itemId)?.item.protocol; if (q) Object.assign(q, fields); });
+  openRunner({
+    title: '4×4 protocol', script: PROTOCOL_4X4,
+    run: { startedAt: p.startedAt, pausedMs: p.pausedMs || 0, pausedAt: p.pausedAt ?? null, skipSec: p.skipSec || 0 },
+    save: (run) => patch(run),
+    onDone: (run) => patch({ ...run, completedAt: settle(PROTOCOL_4X4, run, now()).endAt, hardDone: 4 }),
+    onStop: (run, workDone) => patch({ ...run, endedAt: now(), hardDone: workDone }),
+    doneView: (close) => h('div', { class: 'runner rest' },
+      h('div', { style: { flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '16px' } },
+        h('div', { class: 'phase' }, '4×4 complete'),
+        h('p', { class: 'muted' }, 'Counts toward HIIT and Zone 2 this week.')),
+      h('div', { class: 'stack' },
+        h('button', { class: 'btn btn-big', onclick: () => { close(); openCooldown(); } }, 'Cool-down 3 min (optional)'),
+        h('button', { class: 'btn btn-primary btn-big', onclick: close }, 'Back to workout'))),
+  });
+}
+
+function openCooldown() {
+  openRunner({
+    title: 'Cool-down', script: COOLDOWN, run: { startedAt: now(), pausedMs: 0, pausedAt: null, skipSec: 0 },
+    save: () => {}, onDone: () => {}, onStop: () => {},
+    doneView: (close) => h('div', { class: 'runner rest' },
+      h('div', { style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, h('div', { class: 'phase' }, 'Done. Nice work.')),
+      h('button', { class: 'btn btn-primary btn-big', onclick: close }, 'Back to workout')),
+  });
+}
+
+function protocolView(it) {
+  const p = it.protocol;
+  if (!p) return h('button', { class: 'btn btn-block', style: { margin: '0 16px 14px', width: 'calc(100% - 32px)' }, onclick: () => begin4x4(it.id) }, icon('bolt'), 'Begin 4×4 protocol');
+  if (protoRunning(p)) return h('button', { class: 'btn btn-primary btn-block', style: { margin: '0 16px 14px', width: 'calc(100% - 32px)' }, onclick: () => show4x4(it.id) }, icon('bolt'), '4×4 running — open');
+  return h('div', { class: 'spread', style: { padding: '0 16px 14px' } },
+    p.completedAt ? h('span', { class: 'badge good' }, '4×4 done ✓') : h('span', { class: 'badge' }, `4×4 stopped after ${p.hardDone} of 4`),
+    h('button', { class: 'btn btn-sm', onclick: async () => {
+      if (await confirmSheet('Run the 4×4 again?', 'The previous run on this exercise is replaced.', { ok: 'Restart' })) begin4x4(it.id);
+    } }, 'Restart'));
+}
+
 // ---------- finish / discard ----------
 export function openFinishSheet() {
   const s = store.activeSession();
@@ -266,6 +326,12 @@ async function finish() {
     let y = clock.closeRest(x, t);
     if (y.pausedAt != null) y = clock.resume(y, t);
     if (y.clockStartedAt == null) y = { ...y, clockStartedAt: t, startedAt: t };
+    for (const sec of y.sections) for (const it of sec.items) {
+      if (protoRunning(it.protocol)) {
+        const st = settle(PROTOCOL_4X4, it.protocol, t);
+        Object.assign(it.protocol, st.done ? { completedAt: st.endAt, hardDone: 4 } : { endedAt: t, hardDone: st.workDone });
+      }
+    }
     y.endedAt = t;
     y.status = 'done';
     y.rest = null;
@@ -317,6 +383,7 @@ function itemView(it, category) {
       it.sets.length ? h('div', { class: 'set-list' }, it.sets.map((st, i) => h('button', {
         class: 'set-pill', onclick: (e) => { e.stopPropagation(); openLogSheet(it.id, category, i); },
       }, summarizeSets([st])))) : null),
+    category === 'cardio' ? protocolView(it) : null,
     h('div', { class: 'ex-actions' },
       h('button', { class: 'btn btn-primary', style: { flex: 2 }, onclick: () => openLogSheet(it.id, category) }, icon('plus'), 'Log set'),
       h('button', { class: 'icon-btn', 'aria-label': `Switch ${it.name}`, onclick: () => switchItem(it.id, category) }, icon('swap')),

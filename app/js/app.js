@@ -11,6 +11,7 @@ import * as settings from './ui/settings.js';
 import { ensureData } from './setup.js';
 import * as session from './ui/session.js';
 import { startBar } from './ui/sessionbar.js';
+import { keepAwake, allowSleep } from './platform/wakelock.js';
 
 /** Routes: hash → screen module with render(root). */
 const ROUTES = {
@@ -95,6 +96,9 @@ async function boot() {
   window.addEventListener('hashchange', render);
   render();
   startBar();
+  const awake = () => (store.activeSession() ? keepAwake('session') : allowSleep('session'));
+  store.subscribe(awake);
+  awake();
   if (message) toast(message, 6000);
   setupServiceWorker();
   persist().then((ok) => store.state.settings.persisted !== ok && store.setSetting('persisted', ok));
