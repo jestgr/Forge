@@ -97,3 +97,7 @@
 - Jeff: saved exercise video links weren't easy to open. Now a ▶ video button sits on every Library row and every exercise card in a workout (opens Instagram / YouTube / browser; tapping it doesn't open the card), plus "Watch demo" at the top of the edit sheet and in the exercise sheet. Only http(s) links open; "youtube.com/…" without https:// still works.
 - Tests: 68 pass (new: link safety; smoke test taps a library video button). SW cache `forge-v13`.
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — Garmin Venu 2 plan (branch `rework`, docs only)
+- `docs/HEALTH-DATA.md` rewritten as a concrete plan: homelab job (`/root/projects/garmin-sync`, unofficial `python-garminconnect`) → daily JSON file → Forge import; heart-rate activity detection; file format; phases G1–G5 + Health Connect plan B; 5 open decisions. Sources checked 2026-10-16. Nothing built. No app change.
+- Rollback: `git revert <this commit>`
