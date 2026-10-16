@@ -111,3 +111,9 @@
 - **Host change (outside this repo):** created the APK signing key (PKCS12, alias `forge`, RSA 4096, valid to 2056) and stored it only in `/etc/homelab/secrets.yaml` as `forge_android_key_alias`, `forge_android_keystore_password`, `forge_android_keystore_b64`. Backup of the previous file: `/etc/homelab/secrets.yaml.bak-<timestamp>`. Rollback: restore that backup (`cp -p /etc/homelab/secrets.yaml.bak-<timestamp> /etc/homelab/secrets.yaml`) — only before any APK was signed with the key.
 - Tests: 71 pass (new: native paths). SW cache `forge-v14`.
 - Rollback (code): `git revert <this commit>`
+
+## 2026-10-16 — Android app build (N1 part 2) (branch `rework`)
+- Capacitor 8 Android project (`android/`, app id `com.jestgr.forge`) around `app/`, with plugins: App (Back button), KeepAwake, Haptics, Filesystem, Share. Forge icon + dark splash (`tools/make-android-icons.py`). Release signing + version from environment (`android/app/build.gradle`).
+- New workflow `.github/workflows/android.yml`: checks + tests, `cap sync`, signed release APK, signature check, publish to GitHub Release `android-preview` (rework) / `android-latest` (main) as `forge.apk`. Pages workflow now uses Node 22.
+- **Host changes (outside this repo):** Node 22.23.3 (official tarball, SHA-256 verified) in `/opt/node22` + wrapper `/usr/local/bin/with-node22`; system Node 20 untouched. Rollback: `rm -rf /opt/node22 /usr/local/bin/with-node22`. GitHub repo secrets `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` set from `secrets.yaml` (values never shown). Rollback: `gh secret delete <name>`.
+- Tests: 71 pass. Rollback (code): `git revert <this commit>`; delete the release: `gh release delete android-preview --cleanup-tag`.

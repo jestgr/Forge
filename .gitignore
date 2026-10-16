@@ -14,3 +14,9 @@ forge-backup*.json
 *backup*.json
 # synthetic test data (no personal data) is fine to commit
 !tests/fixtures/*.json
+
+# Android build outputs (android/.gitignore covers the rest)
+*.apk
+*.p12
+*.keystore
+*.jks

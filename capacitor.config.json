@@ -1,0 +1,8 @@
+{
+  "appId": "com.jestgr.forge",
+  "appName": "Forge",
+  "webDir": "app",
+  "android": {
+    "backgroundColor": "#0d1117"
+  }
+}
