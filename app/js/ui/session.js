@@ -1,6 +1,6 @@
 // Active session: start sheet, sections with +ADD / Switch / Remove / Re-roll,
 // set logging, exercise sheet (last 10 + suggestion), finish / discard.
-import { h, icon, openSheet, sheetHead, toast, confirmSheet } from './dom.js';
+import { h, icon, openSheet, sheetHead, toast, confirmSheet, videoButton } from './dom.js';
 import * as store from '../store.js';
 import * as clock from '../core/clock.js';
 import { CATEGORIES, EQUIPMENT, FIELDS, SESSION_SPLITS, SPLITS, TRACKER_SPLITS, SECTION_WINDOWS, fieldKey, label } from '../core/model.js';
@@ -230,7 +230,7 @@ function openExerciseSheet(itemId, category) {
       h('p', { class: 'target' }, `Target: ${targetText(effectiveTargets(item.targets, category)) || '—'}`),
       h('div', { class: 'card stack' }, h('span', { class: 'tiny faint' }, 'Suggestion'), h('p', null, tip.text)),
       ex?.notes ? h('p', { class: 'muted' }, ex.notes) : null,
-      ex?.videoUrl ? h('a', { class: 'btn btn-block', href: ex.videoUrl, target: '_blank', rel: 'noopener' }, icon('video'), 'Watch demo') : null,
+      videoButton(ex?.videoUrl || item.legacy?.videoUrl, item.name, 'btn btn-block'),
       h('h3', null, hist.length ? `Last ${hist.length} time${hist.length > 1 ? 's' : ''}` : 'No history yet'),
       hist.length ? h('div', { class: 'stack', style: { gap: '6px' } }, hist.map((x) => h('div', { class: 'spread small' },
         h('span', { class: 'muted' }, fmtDate(x.at, { month: 'short', day: 'numeric', year: '2-digit' })),
@@ -386,6 +386,7 @@ function itemView(it, category) {
     category === 'cardio' ? protocolView(it) : null,
     h('div', { class: 'ex-actions' },
       h('button', { class: 'btn btn-primary', style: { flex: 2 }, onclick: () => openLogSheet(it.id, category) }, icon('plus'), 'Log set'),
+      videoButton(store.exerciseById(it.exerciseId)?.videoUrl || it.legacy?.videoUrl, it.name),
       h('button', { class: 'icon-btn', 'aria-label': `Switch ${it.name}`, onclick: () => switchItem(it.id, category) }, icon('swap')),
       h('button', { class: 'icon-btn', 'aria-label': `Remove ${it.name}`, onclick: () => removeItem(it.id) }, icon('x'))));
 }

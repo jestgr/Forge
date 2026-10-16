@@ -192,6 +192,14 @@ test('other tabs render', async () => {
   await tick(20);
   assert.ok(has('Search exercises') || body.querySelectorAll('input').length > 0);
   assert.ok(body.querySelectorAll('.list-row').length > 40);
+  const demo = body.querySelectorAll('a').find((a) => a.getAttribute('aria-label') === 'Watch demo of Test Hack Squat');
+  assert.ok(demo, 'library row has a one-tap demo link');
+  assert.equal(demo.getAttribute('href'), 'https://example.com/v1');
+  assert.equal(demo.getAttribute('target'), '_blank');
+  let bubbled = false;
+  demo.parentElement.addEventListener('click', () => { bubbled = true; });
+  demo.dispatch('click');
+  assert.equal(bubbled, false, 'tapping the link does not open the edit sheet');
   g.setHash('#/history');
   await tick(20);
   g.setHash('#/settings');

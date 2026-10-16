@@ -106,6 +106,7 @@ p { margin: 0; }
   cursor: pointer; flex: none; color: var(--text);
 }
 .icon-btn:active { background: var(--surface-3); }
+a.icon-btn { color: var(--ember); text-decoration: none; }
 .icon-btn.sm { width: 44px; height: 44px; }
 .icon { width: 22px; height: 22px; flex: none; }
 

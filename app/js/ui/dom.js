@@ -74,6 +74,22 @@ export function icon(name, cls = 'icon') {
   return svg;
 }
 
+/** A web link safe to open: http(s) only; "youtube.com/…" gets https:// added. */
+export function safeUrl(u) {
+  const v = String(u || '').trim();
+  if (/^https?:\/\/\S+$/i.test(v)) return v;
+  if (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(v)) return `https://${v}`;
+  return null;
+}
+
+/** One-tap "watch demo" button (opens Instagram / YouTube / browser). Taps don't reach the card behind it. */
+export function videoButton(url, name, cls = 'icon-btn') {
+  const href = safeUrl(url);
+  if (!href) return null;
+  return h('a', { class: cls, href, target: '_blank', rel: 'noopener', 'aria-label': `Watch demo of ${name}`, title: 'Watch demo',
+    onclick: (e) => e.stopPropagation() }, icon('video'), cls.includes('icon-btn') ? null : 'Watch demo');
+}
+
 // ---------- sheets ----------
 // Each open sheet pushes a history entry, so the phone's Back button closes
 // the top sheet instead of leaving the app.

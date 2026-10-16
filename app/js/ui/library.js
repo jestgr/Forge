@@ -1,6 +1,6 @@
 // Exercise library: browse / search / filter, add / edit / delete.
 // The same browser doubles as the picker for Switch and +ADD in a session.
-import { h, icon, openSheet, sheetHead, toast, confirmSheet } from './dom.js';
+import { h, icon, openSheet, sheetHead, toast, confirmSheet, videoButton } from './dom.js';
 import * as store from '../store.js';
 import { CATEGORIES, SPLITS, EQUIPMENT, FIELDS, label } from '../core/model.js';
 import { builtinExercises } from '../core/migrate.js';
@@ -72,6 +72,7 @@ export function exerciseBrowser(o) {
         ex.builtIn ? (ex.modified ? h('span', { class: 'badge' }, 'edited') : null) : h('span', { class: 'badge accent' }, 'mine')),
       h('p', { class: 'muted small' }, [short(CATEGORIES, ex.categories), ex.splits.length ? short(SPLITS, ex.splits) : 'any split'].join(' · ')),
       targetText(ex.targets) ? h('p', { class: 'target small' }, targetText(ex.targets)) : null),
+    videoButton(ex.videoUrl, ex.name),
     o.action ? h('span', { class: 'btn btn-sm' }, o.action) : null)) : [h('p', { class: 'empty' }, 'No exercises match. Clear a filter or the search.')]));
   };
 
@@ -128,6 +129,7 @@ export function editExercise(ex) {
 
   openSheet((close) => h('div', { class: 'stack' },
     sheetHead(ex ? 'Edit exercise' : 'New exercise', close),
+    ex ? videoButton(ex.videoUrl, ex.name, 'btn btn-block') : null,
     h('label', { class: 'field' }, h('span', null, 'Name'),
       h('input', { class: 'input', value: d.name, placeholder: 'e.g. Cable hammer curl', oninput: (e) => { d.name = e.target.value; } })),
     h('span', { class: 'tiny faint' }, 'Category'),
@@ -170,7 +172,6 @@ export function editExercise(ex) {
 function exerciseExtraActions(ex, close) {
   const original = ex.builtIn ? builtinExercises().find((b) => b.id === ex.id) : null;
   return h('div', { class: 'stack' },
-    ex.videoUrl ? h('a', { class: 'btn btn-block', href: ex.videoUrl, target: '_blank', rel: 'noopener' }, icon('video'), 'Watch demo') : null,
     ex.builtIn && ex.modified && original ? h('button', { class: 'btn btn-block', onclick: async () => {
       if (await confirmSheet('Undo your edits?', `${ex.name} goes back to the built-in settings.`, { ok: 'Revert' })) {
         close(); await store.saveExercise({ ...original, deleted: ex.deleted }); toast('Reverted');
