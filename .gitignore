@@ -12,3 +12,5 @@ forge_backup_*.json
 forge_library_*.json
 forge-backup*.json
 *backup*.json
+# synthetic test data (no personal data) is fine to commit
+!tests/fixtures/*.json

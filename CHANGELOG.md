@@ -79,3 +79,7 @@
 - Real-data run (local only, nothing committed): booted the app with Jeff's real old-Forge backup as old-app storage → 26 sessions, 66 custom exercises brought over; every screen and all 26 session details render; built, logged and saved a workout for every split × a different equipment mode; no errors. `tools/check-migration.mjs` on the same backup: RESULT OK — nothing lost (26/26 sessions, 179/179 entries, 259/259 sets, totals identical).
 - Tests: 66 pass. SW cache `forge-v10`.
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — Fix: commit synthetic test fixture (branch `rework`)
+- `.gitignore` rule `*backup*.json` also hid `tests/fixtures/old-backup.json` (made-up data), so GitHub's tests failed. Added `!tests/fixtures/*.json`; fixture committed. No app change.
+- Rollback: `git revert <this commit>`
