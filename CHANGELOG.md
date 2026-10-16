@@ -17,3 +17,9 @@
 ## 2026-10-14 — Switch to GitHub Pages deploy (branch `feat/github-pages`, from `feat/cloud-run`)
 - `fb996f2` Static Vite app published by GitHub Actions to https://jestgr.github.io/Forge/ on merge to `main`. Google Fit and AI Coach switched off (`FIT_ENABLED`/`AI_ENABLED` in `src/App.tsx`); `server.ts`, Dockerfile and server deps removed (still on `feat/cloud-run`). Manifest/SW paths made relative for the `/Forge/` sub-path. `.env.example` removed. Tested: lint + build pass; built site served under `/Forge/` returns 200 for page, SW, manifest, JS, CSS. Not yet tested in a phone browser. Rollback: `git revert fb996f2`
 - Cloud Run plan dropped in favour of GitHub Pages; `feat/cloud-run` kept for reference.
+
+## 2026-10-16 — Rework phase 0: brief, plan, decisions (branch `rework`)
+- Added `docs/REWORK.md` (Jeff's brief, watch corrected to Garmin Venu 2), `docs/PLAN.md` (review of current app, conflicts, architecture, data model, migration, phases, tests), `docs/DECISIONS.md`.
+- `.gitignore`: also ignore `forge-backup*.json` and `*backup*.json` (personal data).
+- Docs only; no app change, no SW bump needed.
+- Rollback: `git revert <this commit>` (or, before merge, `git branch -D rework`)
