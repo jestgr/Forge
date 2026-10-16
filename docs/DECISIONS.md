@@ -22,3 +22,7 @@ Choices made without asking (brief: "ask only for real decisions"). Each can be 
 | D16 | 2026-10-16 | Split tracker uses the same "≥2 resistance exercises logged" rule; Core counts there. | Brief lists Core in the split tracker; Jeff excluded it only from Heavy. |
 | D17 | 2026-10-16 | Zone 2 = ≥20 min cardio **or** a completed 4×4; a 4×4 therefore earns both HIIT and Zone 2. Sessions can earn several goals. | Jeff ("at least 20 minutes and/or a 4×4"; "one session can count as multiple"). |
 | D18 | 2026-10-16 | Preview at /Forge/preview/ uses its own database (`forge-preview`); it reads the live app's old localStorage only to test migration and never writes to it. | Same web address = shared browser storage; keeps real data safe. |
+| D19 | 2026-10-16 | An exercise with no split tags is usable in any split (old "All" → no tags). | Simpler than listing every split; same behaviour as the old app. |
+| D20 | 2026-10-16 | Zone 2 cardio time: a logged cardio set without a time counts as the exercise's target duration; no "time with section open" tracking. | Old data rarely has cardio times logged; avoids a hidden timer that's hard to trust. |
+| D21 | 2026-10-16 | Credit (Heavy / Zone 2 / HIIT / split) is computed from the session's logged data every time, not stored; only a manual override is stored. | Changing a session later (or the rules) never leaves stale counts. |
+| D22 | 2026-10-16 | Restoring a file that is not a Forge backup is refused with a message (e.g. the current `/root/forge-backup.json`). | No silent partial restores. |

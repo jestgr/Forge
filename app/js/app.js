@@ -8,6 +8,7 @@ import * as dashboard from './ui/dashboard.js';
 import * as library from './ui/library.js';
 import * as history from './ui/history.js';
 import * as settings from './ui/settings.js';
+import { ensureData } from './setup.js';
 
 /** Routes: hash → screen module with render(root). */
 const ROUTES = {
@@ -85,9 +86,12 @@ async function boot() {
       h('button', { class: 'btn', onclick: () => location.reload() }, 'Try again')));
     return;
   }
+  let message = null;
+  try { message = await ensureData(); } catch (e) { console.error('setup failed', e); toast('Could not bring over old data: ' + (e?.message || e), 6000); }
   store.subscribe(render);
   window.addEventListener('hashchange', render);
   render();
+  if (message) toast(message, 6000);
   setupServiceWorker();
   persist().then((ok) => store.state.settings.persisted !== ok && store.setSetting('persisted', ok));
 }

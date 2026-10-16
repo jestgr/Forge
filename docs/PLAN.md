@@ -142,7 +142,7 @@ Week = **Sunday 00:00 → Saturday 24:00** local time.
 - **Heavy** (goal ≥2): a finished workout whose split is lower, chest-shoulders or back-biceps **and** has ≥2 resistance exercises with at least one logged set each. No minimum time. **Core does not count as Heavy.**
 - **Split tracker** (goal: one each of Lower Body, Chest/Shoulders, Back/Biceps, Core): a finished workout of that split with ≥2 resistance exercises logged. Core counts here. Pure Cardio doesn't.
 - **HIIT** (goal 1): a session with a cardio item whose 4×4 reached the end of hard interval 4.
-- **Zone 2** (goal 2): a session with ≥20 min cardio time **or** a completed 4×4. Cardio time = logged `time` on cardio items, plus the duration of any 4×4 run; if nothing logged, time spent with the cardio section open.
+- **Zone 2** (goal 2): a session with ≥20 min cardio time **or** a completed 4×4. Cardio time = per logged cardio set its `time`, or the exercise's target duration if no time was entered; a 4×4 run counts its run time (whichever is larger per exercise).
 - **One session can count toward several goals** (e.g. Lower Body + 4×4 = Heavy + split + HIIT + Zone 2).
 - **Steps:** today vs 8,000, plus "days met this week".
 - **Fallback:** its own counter ("Fallbacks this week"), counts toward none of the above.

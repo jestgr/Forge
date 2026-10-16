@@ -14,16 +14,17 @@
  *
  * @typedef {{ at: number, reps?: number, weight?: number, timeSec?: number, distance?: number,
  *   speed?: number, incline?: number, hr?: number, rpe?: number }} LoggedSet
- * @typedef {{ kind: '4x4', startedAt: number, completedAt: number|null, hardDone: number, endedAt?: number|null }} Protocol
+ * @typedef {{ kind: '4x4', startedAt: number, completedAt: number|null, hardDone: number, endedAt?: number|null,
+ *   pausedMs?: number, pausedAt?: number|null, cooldown?: boolean }} Protocol
  * @typedef {{ id: string, exerciseId: string, name: string, targets: Targets, tracking?: Field[],
  *   sets: LoggedSet[], protocol?: Protocol|null, legacy?: any }} SessionItem
  * @typedef {{ category: Category, items: SessionItem[] }} Section
  * @typedef {{ heavy: boolean, zone2: boolean, hiit: boolean, split: Split|null }} Credit
  * @typedef {{ id: string, kind: 'workout'|'fallback', name?: string, split: Split|null, includeCardio: boolean,
  *   equipment: Equip|null, startedAt: number, endedAt: number|null, pausedMs: number, pausedAt?: number|null,
- *   status: 'active'|'done', sections: Section[], credit?: Credit|null, creditOverride?: Credit|null,
+ *   status: 'active'|'done', sections: Section[], creditOverride?: Partial<Credit>|null,
  *   rest?: { startedAt: number, targetSec: number }|null, lastSetAt?: number|null,
- *   cardioOpenMs?: number, planWeek?: number|null,
+ *   planWeek?: number|null,
  *   source: 'forge'|'migrated', legacy?: any }} Session
  * @typedef {{ date: string, steps?: number|null, sleepHours?: number|null, heartPoints?: number|null, source?: string }} Daily
  * @typedef {{ week: number, focus: string, cardio: string[], notes?: string }} PlanWeek

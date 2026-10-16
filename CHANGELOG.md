@@ -32,3 +32,11 @@
 - Tested: `npm run check` (lint + 3 tests) pass; workflow assemble step simulated locally on a clone (old main builds as before, preview copied + renamed); all preview files served with correct types. Not yet opened in a phone browser.
 - Phone check: open https://jestgr.github.io/Forge/preview/ → PREVIEW ribbon, 4 tabs, Settings shows version `forge-v4`; install it; turn on airplane mode and reopen → still works.
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — Rework phase 2: data model, migration, Backup/Restore (branch `rework`)
+- `core/migrate.js`: old Forge data → schema 2 (built-in ids kept, edits/deletions, custom exercises, sessions + sets, steps/sleep/heart points, plan state, unfinished session; sessions left running > 4 h get a repaired end time, original kept). `core/backup.js`: v2 backup files (everything), old backups accepted (merge by id, never duplicates). `core/goals.js`: credit rules (D15–D17, D20). `core/plans.js`: plans as data + plan-file import.
+- First launch copies data from the old app's storage (read-only, never deleted); fresh installs get the built-in library + 12-week plan.
+- Settings: Back up now, Restore from file, plans (start/stop/start date/import), step goal, reset built-ins, bring over old data again.
+- Tests: 29 pass (migration, backup round-trip, goals incl. week edges, plans, service worker). `tools/check-migration.mjs` on Jeff's real backup (14 Oct): 26/26 sessions, 179/179 entries, 259/259 sets, reps, weight volume and seconds identical, 66/66 custom exercises — "nothing lost". SW cache `forge-v5`.
+- Phone check (preview): Settings shows your sessions count; Back up now downloads a file; Restore that file → same counts.
+- Rollback: `git revert <this commit>`
