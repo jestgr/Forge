@@ -83,3 +83,8 @@
 ## 2026-10-16 — Fix: commit synthetic test fixture (branch `rework`)
 - `.gitignore` rule `*backup*.json` also hid `tests/fixtures/old-backup.json` (made-up data), so GitHub's tests failed. Added `!tests/fixtures/*.json`; fixture committed. No app change.
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — Session timing per Jeff (branch `rework`)
+- Session ≈ 45 min before cardio: Mobility ~10, Posture ~5, Resistance ~30 (25–35; was 25–45). Per exercise: target sets × (duration or ~20 s per untimed set) + rest between sets (exercise's, else 90 s) + 2 min to move to the next exercise. Exercises are only added if they bring a section closer to its aim. Rest timer between sets uses the same 90 s default. (D30)
+- Checked: built-ins 46–48 min per split; Jeff's real library (20 tries per split) 41–48 min before cardio; real-data run of every split still error-free. Tests: 67 pass (new: session ≈ 45 min for every split). SW cache `forge-v11`.
+- Rollback: `git revert <this commit>`

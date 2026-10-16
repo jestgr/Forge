@@ -151,8 +151,8 @@ Week = **Sunday 00:00 → Saturday 24:00** local time.
 ## 7. Begin Next Session — generator
 
 1. Start sheet: split (5 big buttons), cardio yes/no, equipment (4) — all pre-set to last choice.
-2. Time per exercise = sets × work + (sets − 1) × rest + 30 s setup. Work = `durationSec`, else reps × 4 s (a reps range like "8-12" uses its midpoint). Defaults: 3 sets, 10 reps, 60 s rest; mobility/posture default 1–2 sets, 30 s rest.
-3. Sections and windows: Mobility 8–12 min (aim 10), Posture 4–6 (aim 5), Resistance 25–45 (aim 35; none for Pure Cardio), Cardio 20–30 (aim 25; if cardio = yes or Pure Cardio). A cardio exercise with no duration gets 20 min for 1 set.
+2. Time per exercise = sets × work + (sets − 1) × rest + 2 min to move on. Work = the set's duration, else ~20 s for an untimed set. Rest = the exercise's rest, else 90 s. The exercise's target sets are used (default 3; mobility 1, posture 2, cardio 1). (Jeff, 2026-10-16.)
+3. Sections and windows — a session is ~45 min before cardio: Mobility 8–12 min (aim 10), Posture 4–6 (aim 5), Resistance 25–35 (aim 30; none for Pure Cardio), Cardio 20–30 (aim 25; if cardio = yes or Pure Cardio). An exercise is only added if it brings the section closer to its aim. A cardio exercise longer than 30 min is trimmed to 30 for that session.
 4. Candidates: the category matches, equipment matches the chosen mode, and for resistance the split matches (`upper` tags count for chest-shoulders and back-biceps). Fill greedily by **score**: days since last done (never done = top), small random jitter so it isn't the same list every time, a penalty for two exercises with near-identical names. Stop when the section is inside its window.
 5. If the VO2 plan is active, that week's cardio exercise goes first in Cardio.
 6. Everything is editable afterwards: +ADD per section; per exercise **Switch** (library opened on the right category/split, filter removable, any exercise allowed) and **Remove**. Section headers show estimated minutes vs target.

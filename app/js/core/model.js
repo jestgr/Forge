@@ -86,23 +86,27 @@ export const label = (/** @type {[string,string][]} */ list, /** @type {string} 
 /** Weekly goals. */
 export const GOALS = { heavy: 2, zone2: 2, hiit: 1, stepsPerDay: 8000, zone2Minutes: 20, heavyMinExercises: 2 };
 
-/** Section time windows for the generator, in minutes. */
+/** Section time windows for the generator, in minutes. A session is ~45 min before cardio: 10 + 5 + 30. */
 export const SECTION_WINDOWS = {
   mobility: { min: 8, aim: 10, max: 12 },
   posture: { min: 4, aim: 5, max: 6 },
-  resistance: { min: 25, aim: 35, max: 45 },
+  resistance: { min: 25, aim: 30, max: 35 },
   cardio: { min: 20, aim: 25, max: 30 },
 };
 
+/** Rest between sets when an exercise has none set (Jeff, 2026-10-16). */
+export const DEFAULT_REST_SEC = 90;
 /** Defaults when an exercise has no targets. */
 export const DEFAULT_TARGETS = {
-  resistance: { sets: 3, reps: 10, restSec: 90, durationSec: null },
-  mobility: { sets: 1, reps: null, restSec: 15, durationSec: 60 },
-  posture: { sets: 2, reps: 12, restSec: 30, durationSec: null },
+  resistance: { sets: 3, reps: 10, restSec: DEFAULT_REST_SEC, durationSec: null },
+  mobility: { sets: 1, reps: null, restSec: DEFAULT_REST_SEC, durationSec: 60 },
+  posture: { sets: 2, reps: 12, restSec: DEFAULT_REST_SEC, durationSec: null },
   cardio: { sets: 1, reps: null, restSec: 0, durationSec: 20 * 60 },
 };
-export const SECONDS_PER_REP = 4;
-export const SETUP_SEC = 30;
+/** An untimed working set takes about this long. */
+export const WORK_SET_SEC = 20;
+/** Moving on to the next exercise. */
+export const TRANSITION_SEC = 120;
 
 /**
  * @typedef {{ name: string, sec: number, type: 'work'|'rest', label?: string }} Segment

@@ -1,7 +1,7 @@
 // "Begin Next Session": fill each section by estimated time, preferring
 // exercises not done recently, respecting split and equipment mode. Pure.
-import { CATEGORIES, DEFAULT_TARGETS, SECONDS_PER_REP, SECTION_WINDOWS, SETUP_SEC } from './model.js';
-import { repsNumber, rng, uid } from './util.js';
+import { CATEGORIES, DEFAULT_TARGETS, SECTION_WINDOWS, TRANSITION_SEC, WORK_SET_SEC } from './model.js';
+import { rng, uid } from './util.js';
 
 /** @typedef {import('./model.js').Exercise} Exercise */
 /** @typedef {import('./model.js').Session} Session */
@@ -25,11 +25,14 @@ export function effectiveTargets(targets, category) {
   };
 }
 
-/** Estimated seconds for one exercise: sets × (work + rest) + setup. */
+/**
+ * Estimated seconds for one exercise: sets × work + rest between sets + moving on.
+ * Work = the set's duration, or ~20 s for an untimed set. Rest = the exercise's, else 90 s.
+ */
 export function estimateSec(targets, category) {
   const t = effectiveTargets(targets, category);
-  const work = t.durationSec || (repsNumber(t.reps) ?? 10) * SECONDS_PER_REP;
-  return t.sets * (work + (t.restSec || 0)) + SETUP_SEC;
+  const work = t.durationSec || WORK_SET_SEC;
+  return t.sets * work + (t.sets - 1) * (t.restSec || 0) + TRANSITION_SEC;
 }
 
 /** Does an exercise fit the session split? Empty splits = any split; Upper = both upper-body days. */
@@ -96,7 +99,7 @@ export function fillSection(o) {
     if (names.has(normName(ex.name))) continue;
     const item = makeItem(ex, o.category, o.category === 'cardio' ? maxSec : Infinity);
     const est = estimateSec(item.targets, o.category);
-    if (total + est > maxSec + SETUP_SEC && items.length) continue;
+    if (items.length && (total + est > maxSec + 60 || Math.abs(total + est - aimSec) >= Math.abs(total - aimSec))) continue; // only if it gets closer to the aim
     items.push(item);
     names.add(normName(ex.name));
     total += est;
