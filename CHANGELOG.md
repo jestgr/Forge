@@ -129,3 +129,9 @@
 ## 2026-10-16 — Fix: APK signature check (branch `rework`)
 - Signature check now uses `keytool -printcert -jarfile` and compares the certificate's SHA-256 fingerprint with the Forge key's (public value, in the workflow).
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — First Android APK published (branch `rework`)
+- Signature check uses `apksigner` (APKs are v2-signed; `keytool -jarfile` only sees old v1 signatures) and compares the certificate SHA-256 with the Forge key's.
+- GitHub Release `android-preview`: "Forge Android v14.5 (rework)", `forge.apk` 3.2 MB, signed with the Forge key (RSA 4096, CN=Forge Android). Link: https://github.com/jestgr/Forge/releases/download/android-preview/forge.apk
+- Not yet installed on a phone.
+- Rollback: `git revert <this commit>`; `gh release delete android-preview --cleanup-tag`
