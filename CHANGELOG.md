@@ -101,3 +101,7 @@
 ## 2026-10-16 — Garmin Venu 2 plan (branch `rework`, docs only)
 - `docs/HEALTH-DATA.md` rewritten as a concrete plan: homelab job (`/root/projects/garmin-sync`, unofficial `python-garminconnect`) → daily JSON file → Forge import; heart-rate activity detection; file format; phases G1–G5 + Health Connect plan B; 5 open decisions. Sources checked 2026-10-16. Nothing built. No app change.
 - Rollback: `git revert <this commit>`
+
+## 2026-10-16 — Garmin plan v2 (branch `rework`, docs only)
+- Per Jeff: no unofficial Garmin login; Android-side approach. `docs/HEALTH-DATA.md` v2: read Health Connect (Garmin writes there; Google Fit reads there; Google Fit APIs close end of 2026); recommend wrapping Forge as a native APK (Capacitor, built on GitHub Actions) instead of a throw-away helper; steps N1–N4; 4 questions. Nothing built.
+- Rollback: `git revert <this commit>`
