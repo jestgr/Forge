@@ -201,6 +201,8 @@ textarea.input { min-height: 96px; resize: vertical; }
 .tile .num { font-size: 34px; font-weight: 900; font-family: var(--mono); line-height: 1; }
 .tile .num small { font-size: 18px; color: var(--faint); font-weight: 700; }
 .tile.met { border-color: var(--good); }
+.watch-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 14px; }
+.watch-grid .mono { font-size: 18px; font-weight: 800; }
 .tile.met .num { color: var(--good); }
 .pips { display: flex; gap: 4px; margin-top: 10px; }
 .pip { flex: 1; height: 6px; border-radius: 3px; background: var(--surface-3); }

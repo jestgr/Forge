@@ -8,6 +8,7 @@ import { summarizeSets } from '../core/progress.js';
 import { dateKey, fmtDate, fmtMinutes, fmtNum } from '../core/util.js';
 import { totals } from '../core/clock.js';
 import { openDailySheet } from './dashboard.js';
+import { FIELDS, stepsOf, sleepHoursOf } from '../core/metrics.js';
 
 /** @typedef {import('../core/model.js').Session} Session */
 const { state } = store;
@@ -74,7 +75,10 @@ function openDay(date) {
     const d = state.daily[date];
     return h('div', { class: 'stack' },
       sheetHead(fmtDate(new Date(date + 'T12:00').getTime(), { weekday: 'long', month: 'long', day: 'numeric' }), close),
-      h('p', { class: 'muted' }, [d?.steps ? `${fmtNum(d.steps)} steps` : 'No steps entered', d?.sleepHours ? `${d.sleepHours} h sleep` : '', d?.heartPoints ? `${d.heartPoints} heart points` : ''].filter(Boolean).join(' · ')),
+      h('p', { class: 'muted' }, [stepsOf(d) ? `${fmtNum(Math.round(stepsOf(d)))} steps` : 'No steps', sleepHoursOf(d) ? `${sleepHoursOf(d)} h sleep` : '', d?.heartPoints ? `${d.heartPoints} heart points` : ''].filter(Boolean).join(' · ')),
+      d?.watch ? h('div', { class: 'card stack', style: { gap: '6px' } },
+        h('span', { class: 'tiny faint' }, 'From your watch'),
+        ...FIELDS.filter((f) => d.watch[f.key] != null).map((f) => h('div', { class: 'spread small' }, h('span', null, f.label), h('span', { class: 'mono' }, f.show(d.watch[f.key]))))) : null,
       list.length ? list.map((s) => sessionRow(s, () => { close(); openSessionDetail(s.id); })) : h('p', { class: 'muted' }, 'No sessions.'),
       h('button', { class: 'btn btn-block', onclick: () => { close(); openDailySheet(date); } }, 'Edit steps & sleep'));
   }, { label: 'Day' });

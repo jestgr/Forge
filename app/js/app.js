@@ -13,6 +13,7 @@ import * as session from './ui/session.js';
 import { startBar } from './ui/sessionbar.js';
 import { keepAwake, allowSleep } from './platform/wakelock.js';
 import { isNative } from './platform/native.js';
+import { startAutoPull } from './platform/healthconnect.js';
 
 /** Routes: hash → screen module with render(root). */
 const ROUTES = {
@@ -103,6 +104,7 @@ async function boot() {
   awake();
   if (message) toast(message, 6000);
   setupServiceWorker();
+  if (isNative()) startAutoPull();
   persist().then((ok) => store.state.settings.persisted !== ok && store.setSetting('persisted', ok));
 }
 

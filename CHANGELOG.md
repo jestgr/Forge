@@ -135,3 +135,11 @@
 - GitHub Release `android-preview`: "Forge Android v14.5 (rework)", `forge.apk` 3.2 MB, signed with the Forge key (RSA 4096, CN=Forge Android). Link: https://github.com/jestgr/Forge/releases/download/android-preview/forge.apk
 - Not yet installed on a phone.
 - Rollback: `git revert <this commit>`; `gh release delete android-preview --cleanup-tag`
+
+## 2026-10-18 — Android N2: watch data from Health Connect (branch `rework`)
+- Added `@capgo/capacitor-health` (Health Connect plugin). Forge **reads only**: the plugin's write permissions are removed in `android/app/src/main/AndroidManifest.xml`; asks for 30-day history access too. minSdk 24 → 26. `app/privacypolicy.html` (shown by Health Connect's "privacy policy" link).
+- `core/metrics.js`: list of watch data types (steps, sleep, active/total calories, distance, heart rate, resting HR, HRV, weight, body fat; workouts permission for N3) and how readings become one value per day. `platform/healthconnect.js`: connect, read (30 days first, then last 7 days on open/return, max every 15 min), saved in `daily[date].watch`.
+- Settings → **Watch data** card (Connect / Read now / Health Connect settings / Stop reading). Today: steps tile uses watch steps unless typed; "From your watch today" card. Steps & sleep sheet shows watch values as hints (typed numbers win). History day sheet lists watch values.
+- Decisions D35–D40. Tests: 84 pass (new: metric folding, fake-plugin reading). Version `forge-v15`.
+- Not available yet: elevation gained (plugin lacks it).
+- Rollback: `git revert <this commit>`

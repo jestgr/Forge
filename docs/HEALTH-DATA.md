@@ -1,6 +1,20 @@
 # Garmin Venu 2 → Forge — plan (v2)
 
-Status 2026-10-16: **plan v2 for Jeff's review — nothing built yet.** Steps and sleep are entered by hand today (Today → Steps & sleep). Plug-in point in Forge: `app/js/platform/health.js`.
+Status 2026-10-18: **N1 done** (Android app installed, restore worked). **N2 built** — Health Connect read in the app: `app/js/platform/healthconnect.js` (plugin calls) + `app/js/core/metrics.js` (which types, how they become one value per day; add a metric there). Decisions D35–D40. Web version: steps and sleep still by hand.
+
+### N2 — what's read (types Jeff picked)
+| Forge | Health Connect | Per day |
+|---|---|---|
+| Steps | Steps | daily total (duplicates between apps removed) |
+| Sleep | Sleep session | minutes asleep, on the wake-up day |
+| Active / total calories | Active / Total calories burned | total |
+| Distance | Distance | total (shown in mi) |
+| Heart rate | Heart rate | average / min / max |
+| Resting heart rate | Resting heart rate | latest |
+| HRV | Heart rate variability (RMSSD) | average — only if a source writes it |
+| Weight / body fat | Weight / Body fat | latest (weight shown in lb) |
+| Workouts | Exercise sessions | permission asked now; used in N3 |
+| Elevation gained | Elevation gained | **not yet** — plugin lacks it |
 
 ## Jeff's decisions (2026-10-16)
 - **No unofficial Garmin login** (no `python-garminconnect`, no homelab job holding Garmin tokens).

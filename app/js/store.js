@@ -97,6 +97,14 @@ export async function saveDaily(d) {
   await db.put('daily', d);
 }
 
+/** Several days at once (one redraw), e.g. after reading the watch. @param {Daily[]} list */
+export async function saveDailies(list) {
+  if (!list.length) return;
+  for (const d of list) state.daily[d.date] = d;
+  emit();
+  await db.putMany('daily', list);
+}
+
 /** @param {Plan} p */
 export async function savePlan(p) {
   const i = state.plans.findIndex((x) => x.id === p.id);

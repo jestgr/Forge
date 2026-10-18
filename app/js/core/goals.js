@@ -1,6 +1,7 @@
 // Weekly goals and what each session earns (rules confirmed by Jeff, PLAN.md §6).
 import { GOALS, HEAVY_SPLITS, TRACKER_SPLITS } from './model.js';
 import { addDays, dateKey, weekStart } from './util.js';
+import { stepsOf } from './metrics.js';
 
 /** @typedef {import('./model.js').Session} Session */
 /** @typedef {import('./model.js').Credit} Credit */
@@ -73,8 +74,8 @@ export function weekSummary(sessions, daily, now, stepGoal = GOALS.stepsPerDay) 
   }
   for (let d = from; d < to && d <= now; d = addDays(d, 1)) {
     out.days++;
-    if ((daily[dateKey(d)]?.steps || 0) >= stepGoal) out.stepDays++;
+    if (stepsOf(daily[dateKey(d)]) >= stepGoal) out.stepDays++;
   }
-  out.stepsToday = daily[dateKey(now)]?.steps || 0;
+  out.stepsToday = stepsOf(daily[dateKey(now)]);
   return out;
 }

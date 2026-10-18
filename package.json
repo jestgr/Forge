@@ -22,6 +22,7 @@
     "@capacitor/core": "^8.5.3",
     "@capacitor/filesystem": "^8.1.5",
     "@capacitor/haptics": "^8.0.2",
-    "@capacitor/share": "^8.0.3"
+    "@capacitor/share": "^8.0.3",
+    "@capgo/capacitor-health": "^8.11.12"
   }
 }

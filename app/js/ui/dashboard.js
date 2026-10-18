@@ -11,6 +11,7 @@ import { planWeek } from '../core/plans.js';
 import { uid, dateKey, addDays, fmtDate, fmtNum } from '../core/util.js';
 import { unlockAudio } from '../platform/cues.js';
 import { setDaily } from '../platform/health.js';
+import { FIELDS, stepsOf, sleepHoursOf } from '../core/metrics.js';
 import { exportBackup } from './settings.js';
 
 const { state } = store;
@@ -73,6 +74,7 @@ export function openDailySheet(date = dateKey(Date.now())) {
     const d = /** @type {any} */ (state.daily[day] || {});
     vals.steps = d.steps ?? '';
     vals.sleepHours = d.sleepHours ?? '';
+    vals.watch = d.watch || {};
   };
   load();
   const today = dateKey(Date.now());
@@ -84,14 +86,30 @@ export function openDailySheet(date = dateKey(Date.now())) {
     }, text))),
     day !== today && day !== yesterday ? h('p', { class: 'muted' }, fmtDate(new Date(day + 'T12:00').getTime())) : null,
     h('label', { class: 'field' }, h('span', null, 'Steps'),
-      h('input', { class: 'input', type: 'number', inputmode: 'numeric', min: 0, value: vals.steps, placeholder: 'e.g. 8400', oninput: (e) => { vals.steps = e.target.value; } })),
+      h('input', { class: 'input', type: 'number', inputmode: 'numeric', min: 0, value: vals.steps,
+        placeholder: vals.watch.steps ? `Watch: ${fmtNum(Math.round(vals.watch.steps))}` : 'e.g. 8400', oninput: (e) => { vals.steps = e.target.value; } })),
     h('label', { class: 'field' }, h('span', null, 'Sleep (hours, night before)'),
-      h('input', { class: 'input', type: 'number', inputmode: 'decimal', min: 0, step: 0.25, value: vals.sleepHours, placeholder: 'e.g. 7.5', oninput: (e) => { vals.sleepHours = e.target.value; } })),
+      h('input', { class: 'input', type: 'number', inputmode: 'decimal', min: 0, step: 0.25, value: vals.sleepHours,
+        placeholder: vals.watch.sleepMin ? `Watch: ${sleepHoursOf({ date: day, watch: vals.watch })} h` : 'e.g. 7.5', oninput: (e) => { vals.sleepHours = e.target.value; } })),
+    vals.watch.steps || vals.watch.sleepMin ? h('p', { class: 'faint small' }, 'Leave a box empty to use the watch’s number; a number you type replaces it.') : null,
     h('button', { class: 'btn btn-primary btn-big', onclick: async () => {
       close();
       await setDaily(day, { steps: vals.steps === '' ? null : Number(vals.steps), sleepHours: vals.sleepHours === '' ? null : Number(vals.sleepHours) });
       toast('Saved');
     } }, 'Save')), { label: 'Steps and sleep' });
+}
+
+// ---------- from the watch ----------
+function watchCard(now) {
+  const d = state.daily[dateKey(now)];
+  const w = d?.watch || {};
+  const rows = FIELDS.filter((f) => f.dashboard && w[f.key] != null);
+  if (!rows.length) return null;
+  return h('div', { class: 'card stack', role: 'button', onclick: () => openDailySheet() },
+    h('div', { class: 'spread' }, h('span', { class: 'tiny faint' }, 'From your watch today'),
+      d.watchAt ? h('span', { class: 'faint small' }, new Date(d.watchAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })) : null),
+    h('div', { class: 'watch-grid' }, rows.map((f) => h('div', null,
+      h('div', { class: 'faint small' }, f.label), h('div', { class: 'mono' }, f.show(w[f.key]))))));
 }
 
 // ---------- screen ----------
@@ -130,6 +148,7 @@ export function render(root) {
           h('div', { class: 'tiny faint' }, 'Steps today'),
           h('div', { class: 'num', style: { fontSize: '26px' } }, fmtNum(w.stepsToday)),
           h('div', { class: 'faint small', style: { marginTop: '6px' } }, `goal ${fmtNum(stepGoal)} · ${w.stepDays}/${w.days} days`))),
+      watchCard(now),
       h('div', { class: 'stack', style: { gap: '8px' } },
         h('div', { class: 'spread' }, h('span', { class: 'tiny faint' }, 'Splits this week'), h('span', { class: 'faint small' }, `Fallbacks: ${w.fallback}`)),
         h('div', { class: 'splits' }, TRACKER_SPLITS.map((sp) => h('div', { class: 'split-cell' + (w.splits.includes(sp) ? ' done' : '') },

@@ -12,6 +12,8 @@ import { isNative } from '../platform/native.js';
 import { GOALS } from '../core/model.js';
 import { cue, unlockAudio } from '../platform/cues.js';
 import { supported as wakeSupported } from '../platform/wakelock.js';
+import * as hc from '../platform/healthconnect.js';
+import { METRICS } from '../core/metrics.js';
 
 const { state } = store;
 
@@ -83,6 +85,49 @@ async function restoreDefaults() {
   toast('Built-ins reset');
 }
 
+// ---------- watch data (Health Connect) ----------
+let busy = false;
+async function hcAction(fn, done) {
+  if (busy) return;
+  busy = true;
+  store.emit();
+  try { toast(done(await fn()), 4000); } catch (e) { toast('Health Connect: ' + (e?.message || e), 6000); }
+  busy = false;
+  store.emit();
+}
+const readSummary = (r) => r.read.length
+  ? `Read ${r.read.length} of ${METRICS.length} kinds of data for ${r.days} days`
+  : 'Nothing could be read — check Forge’s access in Health Connect';
+
+function watchCard() {
+  const s = hc.settings();
+  const head = h('h3', null, 'Watch data');
+  if (!hc.nativeAvailable()) {
+    return h('div', { class: 'card stack' }, head,
+      h('p', { class: 'muted small' }, 'Steps, sleep, heart rate and more come in from Garmin through Health Connect — only in the Forge Android app. Here, enter steps and sleep by hand (Today → Steps & sleep).'));
+  }
+  if (!s.connected) {
+    return h('div', { class: 'card stack' }, head,
+      h('p', { class: 'muted small' }, 'Read what Garmin Connect saves to Health Connect: steps, sleep, calories, distance, heart rate, resting heart rate, HRV, weight, body fat and workouts. Read-only — Forge never writes there.'),
+      h('button', { class: 'btn btn-primary btn-block', disabled: busy, onclick: () => hcAction(hc.connect, (r) => (r.granted ? readSummary(r) : 'No access given')) },
+        busy ? 'Connecting…' : 'Connect Health Connect'),
+      s.granted && !s.granted.length ? h('p', { class: 'faint small' }, 'If the permission screen doesn’t show again, give access in Health Connect settings.') : null,
+      h('button', { class: 'btn btn-block', onclick: hc.openHealthConnect }, 'Health Connect settings'));
+  }
+  return h('div', { class: 'card stack' }, head,
+    h('p', { class: 'muted small' }, s.lastSyncAt
+      ? `Last read ${fmtDate(s.lastSyncAt)} ${new Date(s.lastSyncAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Reads again when you open Forge (every 15 min at most).`
+      : 'Not read yet.'),
+    s.lastError ? h('p', { class: 'small danger' }, s.lastError) : null,
+    s.failed?.length && !s.lastError ? h('p', { class: 'faint small' }, `Not available: ${s.failed.join(', ')}`) : null,
+    h('button', { class: 'btn btn-primary btn-block', disabled: busy, onclick: () => hcAction(() => hc.pull(), readSummary) }, busy ? 'Reading…' : 'Read now'),
+    h('div', { class: 'grid-2' },
+      h('button', { class: 'btn', disabled: busy, onclick: () => hcAction(hc.connect, (r) => (r.granted ? readSummary(r) : 'No access given')) }, 'Check access'),
+      h('button', { class: 'btn', onclick: hc.openHealthConnect }, 'Health Connect')),
+    h('p', { class: 'faint small' }, s.history ? 'Older history allowed.' : 'Health Connect gives the last 30 days.'),
+    h('button', { class: 'btn btn-sm', onclick: hc.disconnect }, 'Stop reading'));
+}
+
 // ---------- plans ----------
 function planSheet() {
   openSheet((close) => {
@@ -147,6 +192,7 @@ export function render(root) {
         h('button', { class: 'btn btn-primary btn-block', onclick: exportBackup }, icon('download'), 'Back up now'),
         h('button', { class: 'btn btn-block', onclick: pickRestore }, icon('upload'), 'Restore from file'),
         h('p', { class: 'faint small' }, 'Restore accepts backups from this app (replaces everything) and from the old Forge (adds what’s missing).')),
+      watchCard(),
       h('div', { class: 'card stack' },
         h('h3', null, 'Goals'),
         h('label', { class: 'field' }, h('span', null, 'Daily steps goal'),

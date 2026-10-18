@@ -27,7 +27,10 @@
  *   rest?: { startedAt: number, targetSec: number }|null, lastSetAt?: number|null,
  *   planWeek?: number|null,
  *   source: 'forge'|'migrated', legacy?: any }} Session
- * @typedef {{ date: string, steps?: number|null, sleepHours?: number|null, heartPoints?: number|null, source?: string }} Daily
+ * Daily: steps / sleepHours are typed by hand and win; `watch` holds values read from
+ * Health Connect (base units, see core/metrics.js), `watchAt` when they were read.
+ * @typedef {{ date: string, steps?: number|null, sleepHours?: number|null, heartPoints?: number|null, source?: string,
+ *   watch?: Record<string, number>, watchAt?: number }} Daily
  * @typedef {{ week: number, focus: string, cardio: string[], notes?: string }} PlanWeek
  * @typedef {{ id: string, name: string, description: string, weeks: PlanWeek[], builtIn: boolean }} Plan
  */

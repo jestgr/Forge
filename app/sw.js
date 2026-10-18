@@ -3,13 +3,14 @@
 // A new version installs in the background and waits until the app says
 // "reload" (update banner), so a running workout is never interrupted.
 // Bump CACHE on every deployable change (must equal VERSION in js/version.js).
-const CACHE = 'forge-v14';
+const CACHE = 'forge-v15';
 
 // Every file in app/ except this one (a test checks the list is complete).
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './privacypolicy.html',
   './css/app.css',
   './icons/icon.svg',
   './icons/icon-192.png',
@@ -29,11 +30,13 @@ const ASSETS = [
   './js/core/progress.js',
   './js/core/clock.js',
   './js/core/timeline.js',
+  './js/core/metrics.js',
   './js/platform/db.js',
   './js/platform/native.js',
   './js/platform/cues.js',
   './js/platform/wakelock.js',
   './js/platform/health.js',
+  './js/platform/healthconnect.js',
   './js/ui/dom.js',
   './js/ui/dashboard.js',
   './js/ui/session.js',
