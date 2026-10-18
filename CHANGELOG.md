@@ -142,4 +142,5 @@
 - Settings → **Watch data** card (Connect / Read now / Health Connect settings / Stop reading). Today: steps tile uses watch steps unless typed; "From your watch today" card. Steps & sleep sheet shows watch values as hints (typed numbers win). History day sheet lists watch values.
 - Decisions D35–D40. Tests: 84 pass (new: metric folding, fake-plugin reading). Version `forge-v15`.
 - Not available yet: elevation gained (plugin lacks it).
+- Follow-up fix: remove the VO2-max write permission too (name was cut short).
 - Rollback: `git revert <this commit>`
