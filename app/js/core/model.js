@@ -20,13 +20,14 @@
  *   sets: LoggedSet[], protocol?: Protocol|null, legacy?: any }} SessionItem
  * @typedef {{ category: Category, items: SessionItem[] }} Section
  * @typedef {{ heavy: boolean, zone2: boolean, hiit: boolean, split: Split|null }} Credit
- * @typedef {{ id: string, kind: 'workout'|'fallback', name?: string, split: Split|null, includeCardio: boolean,
+ * @typedef {{ id: string, kind: 'workout'|'fallback'|'watch', name?: string, split: Split|null, includeCardio: boolean,
  *   equipment: Equip|null, startedAt: number, endedAt: number|null, pausedMs: number, pausedAt?: number|null,
  *   status: 'active'|'done', sections: Section[], creditOverride?: Partial<Credit>|null,
  *   clockStartedAt?: number|null, workSince?: number|null, workMs?: number, restMs?: number,
  *   rest?: { startedAt: number, targetSec: number }|null, lastSetAt?: number|null,
  *   planWeek?: number|null,
- *   source: 'forge'|'migrated', legacy?: any }} Session
+ *   source: 'forge'|'migrated'|'watch', legacy?: any,
+ *   watch?: import('./watch.js').WatchWorkout & { counts: { heavy: boolean, zone2: boolean, hiit: boolean } } }} Session
  * Daily: steps / sleepHours are typed by hand and win; `watch` holds values read from
  * Health Connect (base units, see core/metrics.js), `watchAt` when they were read.
  * @typedef {{ date: string, steps?: number|null, sleepHours?: number|null, heartPoints?: number|null, source?: string,
@@ -87,7 +88,7 @@ export const fieldKey = (f) => FIELDS.find((x) => x[0] === f)?.[3];
 export const label = (/** @type {[string,string][]} */ list, /** @type {string} */ v) => list.find((x) => x[0] === v)?.[1] || v;
 
 /** Weekly goals. */
-export const GOALS = { heavy: 2, zone2: 2, hiit: 1, stepsPerDay: 8000, zone2Minutes: 20, heavyMinExercises: 2 };
+export const GOALS = { heavy: 2, zone2: 2, hiit: 1, stepsPerDay: 8000, sleepHours: 7, zone2Minutes: 20, heavyMinExercises: 2 };
 
 /** Section time windows for the generator, in minutes. A session is ~45 min before cardio: 10 + 5 + 30. */
 export const SECTION_WINDOWS = {

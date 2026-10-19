@@ -8,10 +8,12 @@ import { FALLBACK_SCRIPT, FALLBACK_MOVES, GOALS, SPLITS, TRACKER_SPLITS, label }
 import { settle } from '../core/timeline.js';
 import { weekSummary, creditFor } from '../core/goals.js';
 import { planWeek } from '../core/plans.js';
-import { uid, dateKey, addDays, fmtDate, fmtNum } from '../core/util.js';
+import { uid, dateKey, addDays, fmtDate, fmtNum, fmtMinutes } from '../core/util.js';
 import { unlockAudio } from '../platform/cues.js';
 import { setDaily } from '../platform/health.js';
-import { FIELDS, stepsOf, sleepHoursOf } from '../core/metrics.js';
+import { FIELDS, sleepHoursOf } from '../core/metrics.js';
+import * as hc from '../platform/healthconnect.js';
+import { pending, suggest, overlapping, toSession, workoutLabel } from '../core/watch.js';
 import { exportBackup } from './settings.js';
 
 const { state } = store;
@@ -100,16 +102,61 @@ export function openDailySheet(date = dateKey(Date.now())) {
 }
 
 // ---------- from the watch ----------
+const timeOf = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+function syncNow(e) {
+  e.stopPropagation();
+  hc.pull().then((r) => { if (!r.read.length) toast('Nothing could be read — check Forge’s access in Health Connect', 5000); })
+    .catch((err) => toast('Health Connect: ' + (err?.message || err), 5000));
+}
+
 function watchCard(now) {
   const d = state.daily[dateKey(now)];
   const w = d?.watch || {};
   const rows = FIELDS.filter((f) => f.dashboard && w[f.key] != null);
-  if (!rows.length) return null;
+  const connected = hc.nativeAvailable() && hc.settings().connected;
+  if (!rows.length && !connected) return null;
+  const last = hc.settings().lastSyncAt;
   return h('div', { class: 'card stack', role: 'button', onclick: () => openDailySheet() },
     h('div', { class: 'spread' }, h('span', { class: 'tiny faint' }, 'From your watch today'),
-      d.watchAt ? h('span', { class: 'faint small' }, new Date(d.watchAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })) : null),
-    h('div', { class: 'watch-grid' }, rows.map((f) => h('div', null,
-      h('div', { class: 'faint small' }, f.label), h('div', { class: 'mono' }, f.show(w[f.key]))))));
+      h('div', { class: 'row', style: { gap: '6px', alignItems: 'center' } },
+        last ? h('span', { class: 'faint small' }, hc.reading() ? 'Reading…' : timeOf(last)) : null,
+        connected ? h('button', { class: 'icon-btn sm' + (hc.reading() ? ' spin' : ''), 'aria-label': 'Read watch data now', disabled: hc.reading(), onclick: syncNow }, icon('sync')) : null)),
+    rows.length
+      ? h('div', { class: 'watch-grid' }, rows.map((f) => h('div', null,
+        h('div', { class: 'faint small' }, f.label), h('div', { class: 'mono' }, f.show(w[f.key])))))
+      : h('p', { class: 'muted small' }, 'Nothing yet today — Garmin sends data to Health Connect a few hours late.'));
+}
+
+const CHOICES = [['zone2', 'Zone 2'], ['hiit', 'HIIT'], ['heavy', 'Heavy']];
+
+async function ignoreWorkout(w) {
+  const keep = new Set(Object.keys(state.settings.watchWorkouts || {}));
+  await store.setSetting('watchIgnored', [...(state.settings.watchIgnored || []).filter((id) => keep.has(id)), w.id]);
+  toast('Ignored');
+}
+
+function workoutCards(now) {
+  const list = pending(state.settings.watchWorkouts, state.sessions, state.settings.watchIgnored, now);
+  if (!list.length) return null;
+  return h('div', { class: 'stack', style: { gap: '8px' } },
+    h('span', { class: 'tiny faint' }, 'Watch workouts — what do they count as?'),
+    ...list.map((w) => {
+      const sug = suggest(w, state.sessions);
+      const over = overlapping(w, state.sessions);
+      const facts = [fmtMinutes(w.durationSec / 60), w.avgHr ? `avg ${w.avgHr} bpm` : '', w.maxHr ? `max ${w.maxHr}` : '',
+        w.kcal ? `${Math.round(w.kcal)} kcal` : '', w.distanceM ? `${(w.distanceM / 1609.344).toFixed(2)} mi` : ''].filter(Boolean).join(' · ');
+      return h('div', { class: 'card stack' },
+        h('div', { class: 'spread' }, h('h3', null, workoutLabel(w.type)), h('span', { class: 'faint small' }, `${fmtDate(w.start)} ${timeOf(w.start)}`)),
+        h('p', { class: 'muted small' }, facts),
+        over ? h('p', { class: 'small', style: { color: 'var(--ember)' } }, `During your Forge session (${sessionTitle(over)}) — probably Ignore.`) : null,
+        h('div', { class: 'grid-4' },
+          ...CHOICES.map(([k, text]) => h('button', { class: 'btn btn-sm' + (sug === k ? ' btn-primary' : ''), onclick: async () => {
+            await store.saveSession(toSession(w, /** @type {any} */ (k)));
+            toast(`Counted as ${text}`);
+          } }, text)),
+          h('button', { class: 'btn btn-sm' + (sug === null ? ' btn-primary' : ''), onclick: () => ignoreWorkout(w) }, 'Ignore')));
+    }));
 }
 
 // ---------- screen ----------
@@ -148,6 +195,7 @@ export function render(root) {
           h('div', { class: 'tiny faint' }, 'Steps today'),
           h('div', { class: 'num', style: { fontSize: '26px' } }, fmtNum(w.stepsToday)),
           h('div', { class: 'faint small', style: { marginTop: '6px' } }, `goal ${fmtNum(stepGoal)} · ${w.stepDays}/${w.days} days`))),
+      workoutCards(now),
       watchCard(now),
       h('div', { class: 'stack', style: { gap: '8px' } },
         h('div', { class: 'spread' }, h('span', { class: 'tiny faint' }, 'Splits this week'), h('span', { class: 'faint small' }, `Fallbacks: ${w.fallback}`)),

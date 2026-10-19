@@ -2,8 +2,8 @@
 // "what it counts as" (automatic, or changed by hand) and delete.
 import { h, icon, openSheet, sheetHead, toast, confirmSheet } from './dom.js';
 import * as store from '../store.js';
-import { CATEGORIES, EQUIPMENT, SPLITS, label } from '../core/model.js';
-import { computeCredit, creditFor } from '../core/goals.js';
+import { CATEGORIES, EQUIPMENT, GOALS, SPLITS, label } from '../core/model.js';
+import { computeCredit, creditFor, dayMarks, MARKS } from '../core/goals.js';
 import { summarizeSets } from '../core/progress.js';
 import { dateKey, fmtDate, fmtMinutes, fmtNum } from '../core/util.js';
 import { totals } from '../core/clock.js';
@@ -15,6 +15,7 @@ const { state } = store;
 
 export function sessionTitle(s) {
   if (s.kind === 'fallback') return '6-minute fallback';
+  if (s.kind === 'watch') return `${s.name || 'Workout'} (watch)`;
   const base = s.split ? label(SPLITS, s.split) : (s.name || 'Workout');
   return s.includeCardio && s.split !== 'pure-cardio' ? `${base} + cardio` : base;
 }
@@ -47,6 +48,8 @@ export function openSessionDetail(id) {
       h('p', { class: 'muted' }, `${fmtDate(s.startedAt, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} · ${new Date(s.startedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`),
       h('p', null, [minutes(s) ? fmtMinutes(minutes(s)) : '', t && t.workSec ? `work ${fmtMinutes(t.workSec / 60)} · rest ${fmtMinutes(t.restSec / 60)}` : '',
         s.equipment ? label(EQUIPMENT, s.equipment) : ''].filter(Boolean).join(' · ')),
+      s.watch ? h('p', { class: 'muted small' }, ['Recorded by the watch', s.watch.avgHr ? `avg ${s.watch.avgHr} bpm` : '', s.watch.maxHr ? `max ${s.watch.maxHr}` : '',
+        s.watch.kcal ? `${Math.round(s.watch.kcal)} kcal` : '', s.watch.distanceM ? `${(s.watch.distanceM / 1609.344).toFixed(2)} mi` : ''].filter(Boolean).join(' · ')) : null,
       s.legacy?.endTimeFixed ? h('p', { class: 'faint small' }, 'End time repaired (the old app was left running).') : null,
       s.kind !== 'fallback' ? h('div', { class: 'card stack' },
         h('span', { class: 'tiny faint' }, s.creditOverride ? 'Counts as (changed by hand)' : 'Counts as (automatic)'),
@@ -102,17 +105,17 @@ function calendar() {
   const m = new Date(month);
   const first = new Date(m.getFullYear(), m.getMonth(), 1);
   const days = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
-  const byDay = {};
-  for (const s of state.sessions) if (s.status === 'done') (byDay[dateKey(s.startedAt)] ||= []).push(s);
+  const marks = dayMarks(state.sessions, state.daily, { stepGoal: state.settings.stepGoal || GOALS.stepsPerDay, sleepGoal: state.settings.sleepGoal || GOALS.sleepHours });
   const todayKey = dateKey(now);
   const cells = [];
   for (let i = 0; i < first.getDay(); i++) cells.push(h('div', { class: 'day pad' }));
   for (let d = 1; d <= days; d++) {
     const key = dateKey(new Date(m.getFullYear(), m.getMonth(), d));
-    const list = byDay[key] || [];
-    cells.push(h('button', { class: 'day' + (key === todayKey ? ' today' : ''), onclick: () => openDay(key), 'aria-label': key },
+    const list = marks[key] || [];
+    const names = list.map((m) => MARKS.find(([k]) => k === m)[1]);
+    cells.push(h('button', { class: 'day' + (key === todayKey ? ' today' : ''), onclick: () => openDay(key), 'aria-label': [key, ...names].join(', ') },
       String(d),
-      h('span', { class: 'dots' }, list.slice(0, 3).map((s) => h('span', { class: 'd' + (s.kind === 'fallback' ? ' fb' : '') })))));
+      h('span', { class: 'dots' }, list.map((m) => h('span', { class: 'd m-' + m })))));
   }
   const go = (n) => { const x = new Date(month); month = new Date(x.getFullYear(), x.getMonth() + n, 1).getTime(); store.emit(); };
   return h('div', { class: 'card stack' },
@@ -120,7 +123,8 @@ function calendar() {
       h('button', { class: 'icon-btn sm', 'aria-label': 'Previous month', onclick: () => go(-1) }, icon('back')),
       h('h3', null, m.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })),
       h('button', { class: 'icon-btn sm', 'aria-label': 'Next month', onclick: () => go(1), style: { transform: 'scaleX(-1)' } }, icon('back'))),
-    h('div', { class: 'cal' }, ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((x) => h('div', { class: 'dow' }, x)), cells));
+    h('div', { class: 'cal' }, ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((x) => h('div', { class: 'dow' }, x)), cells),
+    h('div', { class: 'cal-legend' }, MARKS.map(([k, text]) => h('span', null, h('span', { class: 'd m-' + k }), text))));
 }
 
 export function render(root) {

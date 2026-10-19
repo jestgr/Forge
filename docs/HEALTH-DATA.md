@@ -1,6 +1,6 @@
 # Garmin Venu 2 → Forge — plan (v2)
 
-Status 2026-10-18: **N1 done** (Android app installed, restore worked). **N2 built** — Health Connect read in the app: `app/js/platform/healthconnect.js` (plugin calls) + `app/js/core/metrics.js` (which types, how they become one value per day; add a metric there). Decisions D35–D40. Web version: steps and sleep still by hand.
+Status 2026-10-19: **N1, N2 done** (Jeff: installed, connected, numbers match Garmin). **N3 built** — watch workouts → Today cards (`core/watch.js`, D41–D42). Earlier: **N2** — Health Connect read in the app: `app/js/platform/healthconnect.js` (plugin calls) + `app/js/core/metrics.js` (which types, how they become one value per day; add a metric there). Decisions D35–D40. Web version: steps and sleep still by hand.
 
 ### N2 — what's read (types Jeff picked)
 | Forge | Health Connect | Per day |

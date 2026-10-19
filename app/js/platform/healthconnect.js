@@ -6,6 +6,7 @@ import * as store from '../store.js';
 import { plugin } from './native.js';
 import { METRICS, readTypes, foldAggregate, foldSamples, mergeDays } from '../core/metrics.js';
 import { addDays, dateKey, fromDateKey } from '../core/util.js';
+import { fromPlugin, hrStats, prune } from '../core/watch.js';
 
 const { state } = store;
 const AUTO_EVERY_MS = 15 * 60 * 1000;
@@ -58,11 +59,44 @@ let running = null;
 /**
  * Read the last `days` days and save them under daily[date].watch.
  * @param {{ days?: number }} [opt]
- * @returns {Promise<{ days: number, read: string[], failed: string[] }>}
+ * @returns {Promise<{ days: number, read: string[], failed: string[], workouts?: number }>}
  */
 export function pull(opt = {}) {
-  if (!running) running = doPull(opt).finally(() => { running = null; });
+  if (!running) {
+    running = doPull(opt).finally(() => { running = null; store.emit(); });
+    store.emit();
+  }
   return running;
+}
+
+/** Is a read running right now? */
+export const reading = () => !!running;
+
+/**
+ * Watch workouts in [from, now] (with average / max heart rate) → settings.watchWorkouts.
+ * @returns {Promise<number>} how many workouts were found
+ */
+async function pullWorkouts(p, from, now) {
+  const iso = (t) => new Date(t).toISOString();
+  const r = await p.queryWorkouts({ startDate: iso(from), endDate: iso(now), limit: 200, ascending: true });
+  const known = state.settings.watchWorkouts || {};
+  const next = { ...known };
+  let n = 0;
+  for (const raw of r.workouts || []) {
+    const w = fromPlugin(raw);
+    if (!w) continue;
+    n++;
+    const old = known[w.id];
+    if (old?.avgHr != null) { next[w.id] = { ...w, avgHr: old.avgHr, maxHr: old.maxHr }; continue; }
+    // Heart rate reaches Health Connect late, so try again on later reads until it's there.
+    try {
+      const hr = await p.readSamples({ dataType: 'heartRate', startDate: iso(w.start), endDate: iso(w.end), limit: 0 });
+      Object.assign(w, hrStats(hr.samples));
+    } catch { /* no heart-rate access */ }
+    next[w.id] = w;
+  }
+  await store.setSetting('watchWorkouts', prune(next, now));
+  return n;
 }
 
 /** @param {{ days?: number }} opt */
@@ -112,8 +146,10 @@ async function doPull({ days } = {}) {
     changed.push(next);
   }
   await store.saveDailies(changed);
+  let workouts;
+  try { workouts = await pullWorkouts(p, from, now); } catch { failed.push('Workouts'); }
   await saveSettings({ lastSyncAt: now, lastError: read.length ? null : 'Nothing could be read — check Forge’s access in Health Connect', failed });
-  return { days: n, read, failed };
+  return { days: n, read, failed, workouts };
 }
 
 /** Read again when the app opens or comes back, at most every 15 minutes. */

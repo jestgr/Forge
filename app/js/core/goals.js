@@ -1,7 +1,8 @@
 // Weekly goals and what each session earns (rules confirmed by Jeff, PLAN.md §6).
 import { GOALS, HEAVY_SPLITS, TRACKER_SPLITS } from './model.js';
 import { addDays, dateKey, weekStart } from './util.js';
-import { stepsOf } from './metrics.js';
+import { stepsOf, sleepHoursOf } from './metrics.js';
+import { isCardioType } from './watch.js';
 
 /** @typedef {import('./model.js').Session} Session */
 /** @typedef {import('./model.js').Credit} Credit */
@@ -37,6 +38,8 @@ export function cardioSeconds(s) {
  */
 export function computeCredit(s) {
   if (s.kind === 'fallback') return { heavy: false, zone2: false, hiit: false, split: null };
+  // Watch workout: counts as what Jeff picked on its card.
+  if (s.kind === 'watch') { const c = /** @type {any} */ (s.watch?.counts || {}); return { heavy: !!c.heavy, zone2: !!c.zone2, hiit: !!c.hiit, split: null }; }
   const res = resistanceLogged(s);
   const hiit = s.sections.some((x) => x.category === 'cardio' && x.items.some(did4x4));
   return {
@@ -78,4 +81,40 @@ export function weekSummary(sessions, daily, now, stepGoal = GOALS.stepsPerDay) 
   }
   out.stepsToday = stepsOf(daily[dateKey(now)]);
   return out;
+}
+
+/** Marks shown on the calendar, in this order. */
+export const MARKS = [
+  ['heavy', 'Heavy'], ['zone2', 'Zone 2'], ['hiit', 'HIIT'], ['cardio', 'Cardio'],
+  ['steps', 'Step goal'], ['sleep', 'Sleep goal'], ['fallback', 'Fallback'],
+];
+
+/**
+ * What was accomplished each day → { 'YYYY-MM-DD': ['heavy', 'steps', …] } (MARKS order).
+ * "cardio" = some cardio done that earned neither Zone 2 nor HIIT.
+ * @param {Session[]} sessions
+ * @param {Record<string, import('./model.js').Daily>} daily
+ * @param {{ stepGoal?: number, sleepGoal?: number }} [goals]
+ */
+export function dayMarks(sessions, daily, { stepGoal = GOALS.stepsPerDay, sleepGoal = GOALS.sleepHours } = {}) {
+  /** @type {Record<string, Set<string>>} */
+  const by = {};
+  const add = (date, m) => (by[date] ||= new Set()).add(m);
+  for (const s of sessions) {
+    if (s.status !== 'done') continue;
+    const date = dateKey(s.startedAt);
+    if (s.kind === 'fallback') { add(date, 'fallback'); continue; }
+    const c = creditFor(s);
+    if (c.heavy) add(date, 'heavy');
+    if (c.zone2) add(date, 'zone2');
+    if (c.hiit) add(date, 'hiit');
+    const cardio = s.kind === 'watch' ? isCardioType(s.watch?.type) : cardioSeconds(s) > 0;
+    if (cardio && !c.zone2 && !c.hiit) add(date, 'cardio');
+  }
+  for (const [date, d] of Object.entries(daily || {})) {
+    if (stepsOf(d) >= stepGoal) add(date, 'steps');
+    const sl = sleepHoursOf(d);
+    if (sl != null && sl >= sleepGoal) add(date, 'sleep');
+  }
+  return Object.fromEntries(Object.entries(by).map(([d, set]) => [d, MARKS.map(([k]) => k).filter((k) => set.has(k))]));
 }

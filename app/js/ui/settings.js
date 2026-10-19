@@ -96,7 +96,7 @@ async function hcAction(fn, done) {
   store.emit();
 }
 const readSummary = (r) => r.read.length
-  ? `Read ${r.read.length} of ${METRICS.length} kinds of data for ${r.days} days`
+  ? `Read ${r.read.length} of ${METRICS.length} kinds of data for ${r.days} days${r.workouts ? ` · ${r.workouts} watch workouts` : ''}`
   : 'Nothing could be read — check Forge’s access in Health Connect';
 
 function watchCard() {
@@ -198,6 +198,9 @@ export function render(root) {
         h('label', { class: 'field' }, h('span', null, 'Daily steps goal'),
           h('input', { class: 'input', type: 'number', inputmode: 'numeric', min: 1000, step: 500, value: stepGoal,
             onchange: (e) => { const v = parseInt(e.target.value, 10); if (v > 0) store.setSetting('stepGoal', v); } })),
+        h('label', { class: 'field' }, h('span', null, 'Nightly sleep goal (hours)'),
+          h('input', { class: 'input', type: 'number', inputmode: 'decimal', min: 4, max: 12, step: 0.25, value: state.settings.sleepGoal || GOALS.sleepHours,
+            onchange: (e) => { const v = Number(e.target.value); if (v > 0) store.setSetting('sleepGoal', v); } })),
         h('p', { class: 'faint small' }, 'Weekly: Heavy 2 · Zone 2 2 · HIIT 1 · one each of Lower, Chest/Shoulders, Back/Biceps, Core. Weeks run Sunday–Saturday.')),
       h('div', { class: 'card stack' },
         h('h3', null, 'Timer cues'),

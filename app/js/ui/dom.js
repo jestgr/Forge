@@ -55,6 +55,7 @@ const PATHS = {
   download: 'M12 3v12M7 10l5 5 5-5M4 21h16',
   upload: 'M12 21V9M7 14l5-5 5 5M4 3h16',
   info: 'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20zM12 16v-5M12 8h.01',
+  sync: 'M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4',
 };
 
 /** @param {keyof typeof PATHS} name */

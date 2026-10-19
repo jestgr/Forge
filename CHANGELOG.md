@@ -144,3 +144,11 @@
 - Not available yet: elevation gained (plugin lacks it).
 - Follow-up fix: remove the VO2-max write permission too (name was cut short).
 - Rollback: `git revert <this commit>`
+
+## 2026-10-19 — Android N3: watch workouts on Today; calendar marks; sync on Today (branch `rework`)
+- `core/watch.js`: workouts from Health Connect (with average/max heart rate during them) → cards on Today ("Watch workouts — what do they count as?") with Zone 2 / HIIT / Heavy / Ignore, suggested one highlighted; a choice saves a watch session that counts toward the week (changeable in History). Workouts during a Forge session suggest Ignore.
+- History calendar: small coloured dots per day for Heavy, Zone 2, HIIT, Cardio, Step goal, Sleep goal, Fallback, plus a legend (`dayMarks` in `core/goals.js`).
+- New sleep goal (default 7 h) in Settings → Goals.
+- "From your watch today" card: sync button (reads Health Connect now), shows last read time; visible whenever connected.
+- Decisions D41–D45. Tests: 93 pass (new: workouts, calendar marks, Today/History UI in the Android app). Version `forge-v16`.
+- Rollback: `git revert <this commit>`

@@ -25,9 +25,13 @@ g.Capacitor = {
       },
       readSamples: async (o) => {
         if (o.dataType === 'weight') { if (failWeight) throw new Error('denied'); return { samples: [{ value: 80, startDate: iso(-1, 7) }] }; }
+        if (o.dataType === 'heartRate') return { samples: [{ value: 100, startDate: o.startDate }, { value: 120, startDate: o.startDate }] };
         if (o.dataType === 'sleep') return { samples: [{ value: 420, startDate: iso(-1, 23), endDate: iso(0, 6), sourceId: 'g' }] };
         return { samples: [] };
       },
+      queryWorkouts: async () => ({ workouts: [
+        { platformId: 'abc', workoutType: 'walking', duration: 2700, totalEnergyBurned: 210, totalDistance: 4200, startDate: iso(0, 7), endDate: iso(0, 7.75), sourceName: 'Garmin' },
+      ] }),
       openHealthConnectSettings: async () => {},
     },
   },
@@ -52,6 +56,9 @@ test('connect asks read-only, with history, then reads 30 days', async () => {
   assert.equal(d0.watch.sleepMin, 420);
   assert.deepEqual([store.state.daily[key(-1)].watch.hrAvg, store.state.daily[key(-1)].watch.weightKg], [70, 80]);
   assert.ok(hc.settings().connected && hc.settings().lastSyncAt);
+  assert.equal(r.workouts, 1);
+  assert.deepEqual(store.state.settings.watchWorkouts.abc, { id: 'abc', type: 'walking', start: day(0).getTime() + 7 * 3600000, end: day(0).getTime() + 7.75 * 3600000,
+    durationSec: 2700, kcal: 210, distanceM: 4200, source: 'Garmin', avgHr: 110, maxHr: 120 });
 });
 
 test('later reads cover a week; a type that fails keeps its old values', async () => {
