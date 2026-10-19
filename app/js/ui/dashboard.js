@@ -14,6 +14,7 @@ import { setDaily } from '../platform/health.js';
 import { FIELDS, sleepHoursOf } from '../core/metrics.js';
 import * as hc from '../platform/healthconnect.js';
 import { pending, suggest, overlapping, toSession, workoutLabel } from '../core/watch.js';
+import { pendingEfforts, EFFORT_TYPE } from '../core/effort.js';
 import { exportBackup } from './settings.js';
 
 const { state } = store;
@@ -131,16 +132,25 @@ function watchCard(now) {
 const CHOICES = [['zone2', 'Zone 2'], ['hiit', 'HIIT'], ['heavy', 'Heavy']];
 
 async function ignoreWorkout(w) {
+  if (w.type === EFFORT_TYPE) {
+    const cut = Date.now() - 35 * 86400000;
+    await store.setSetting('effortIgnored', [...(state.settings.effortIgnored || []).filter(([, e]) => e > cut), [w.start, w.end]]);
+    toast('Ignored');
+    return;
+  }
   const keep = new Set(Object.keys(state.settings.watchWorkouts || {}));
   await store.setSetting('watchIgnored', [...(state.settings.watchIgnored || []).filter((id) => keep.has(id)), w.id]);
   toast('Ignored');
 }
 
 function workoutCards(now) {
-  const list = pending(state.settings.watchWorkouts, state.sessions, state.settings.watchIgnored, now);
+  const list = [
+    ...pending(state.settings.watchWorkouts, state.sessions, state.settings.watchIgnored, now),
+    ...pendingEfforts(state.settings.hrEfforts, state.sessions, state.settings.watchWorkouts, state.settings.effortIgnored, now),
+  ].sort((a, b) => b.start - a.start);
   if (!list.length) return null;
   return h('div', { class: 'stack', style: { gap: '8px' } },
-    h('span', { class: 'tiny faint' }, 'Watch workouts — what do they count as?'),
+    h('span', { class: 'tiny faint' }, 'From your watch — what do these count as?'),
     ...list.map((w) => {
       const sug = suggest(w, state.sessions);
       const over = overlapping(w, state.sessions);
@@ -149,6 +159,7 @@ function workoutCards(now) {
       return h('div', { class: 'card stack' },
         h('div', { class: 'spread' }, h('h3', null, workoutLabel(w.type)), h('span', { class: 'faint small' }, `${fmtDate(w.start)} ${timeOf(w.start)}`)),
         h('p', { class: 'muted small' }, facts),
+        w.type === EFFORT_TYPE ? h('p', { class: 'faint small' }, 'No workout was started — your heart rate stayed up.') : null,
         over ? h('p', { class: 'small', style: { color: 'var(--ember)' } }, `During your Forge session (${sessionTitle(over)}) — probably Ignore.`) : null,
         h('div', { class: 'grid-4' },
           ...CHOICES.map(([k, text]) => h('button', { class: 'btn btn-sm' + (sug === k ? ' btn-primary' : ''), onclick: async () => {

@@ -125,7 +125,24 @@ function watchCard() {
       h('button', { class: 'btn', disabled: busy, onclick: () => hcAction(hc.connect, (r) => (r.granted ? readSummary(r) : 'No access given')) }, 'Check access'),
       h('button', { class: 'btn', onclick: hc.openHealthConnect }, 'Health Connect')),
     h('p', { class: 'faint small' }, s.history ? 'Older history allowed.' : 'Health Connect gives the last 30 days.'),
+    effortFields(),
     h('button', { class: 'btn btn-sm', onclick: hc.disconnect }, 'Stop reading'));
+}
+
+function effortFields() {
+  const t = hc.currentThreshold();
+  const e = state.settings.effort || {};
+  const set = (k) => (ev) => { const v = parseInt(ev.target.value, 10); store.setSetting('effort', { ...e, [k]: v > 0 ? v : null }); };
+  return h('div', { class: 'stack', style: { gap: '8px' } },
+    h('span', { class: 'tiny faint' }, 'Effort without a workout'),
+    h('p', { class: 'muted small' }, `Heart rate at or above ${t.bpm} bpm for 20 min or more shows a card on Today. `
+      + (e.threshold ? 'Set by hand.' : `Automatic: 60 % of heart-rate reserve (resting ${Math.round(t.rest)}, max ${Math.round(t.max)}).`)),
+    h('div', { class: 'grid-2' },
+      h('label', { class: 'field' }, h('span', null, 'Max heart rate'),
+        h('input', { class: 'input', type: 'number', inputmode: 'numeric', min: 120, max: 230, value: e.maxHr ?? '', placeholder: `auto ${Math.round(t.max)}`, onchange: set('maxHr') })),
+      h('label', { class: 'field' }, h('span', null, 'Effort from (bpm)'),
+        h('input', { class: 'input', type: 'number', inputmode: 'numeric', min: 80, max: 200, value: e.threshold ?? '', placeholder: `auto ${t.auto}`, onchange: set('threshold') }))),
+    h('p', { class: 'faint small' }, 'Leave empty for automatic. Changes apply from the next read.'));
 }
 
 // ---------- plans ----------

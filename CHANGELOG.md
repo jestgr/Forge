@@ -152,3 +152,10 @@
 - "From your watch today" card: sync button (reads Health Connect now), shows last read time; visible whenever connected.
 - Decisions D41–D45. Tests: 93 pass (new: workouts, calendar marks, Today/History UI in the Android app). Version `forge-v16`.
 - Rollback: `git revert <this commit>`
+
+## 2026-10-19 — Android N4: effort without a workout; calendar "Other workout" dot (branch `rework`)
+- `core/effort.js`: finds 20+ min of raised heart rate (dips ≤ 6 min allowed) in the last 8 days of all-day readings; threshold 60 % of heart-rate reserve, or set by hand. Cards on Today ("Elevated heart rate") with Zone 2 / HIIT / Heavy / Ignore; hidden when inside a session, watch workout or ignored stretch.
+- Settings → Watch data: "Effort without a workout" — shows the threshold, optional max heart rate and threshold.
+- Calendar: white "Other workout" dot for sessions that earned nothing else (checked on Jeff's real backup: every session day now has a dot; layout holds all 8 marks).
+- Decisions D46–D47. Tests: 100 pass. Version `forge-v17`.
+- Rollback: `git revert <this commit>`

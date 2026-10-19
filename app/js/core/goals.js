@@ -86,12 +86,12 @@ export function weekSummary(sessions, daily, now, stepGoal = GOALS.stepsPerDay) 
 /** Marks shown on the calendar, in this order. */
 export const MARKS = [
   ['heavy', 'Heavy'], ['zone2', 'Zone 2'], ['hiit', 'HIIT'], ['cardio', 'Cardio'],
-  ['steps', 'Step goal'], ['sleep', 'Sleep goal'], ['fallback', 'Fallback'],
+  ['workout', 'Other workout'], ['steps', 'Step goal'], ['sleep', 'Sleep goal'], ['fallback', 'Fallback'],
 ];
 
 /**
  * What was accomplished each day → { 'YYYY-MM-DD': ['heavy', 'steps', …] } (MARKS order).
- * "cardio" = some cardio done that earned neither Zone 2 nor HIIT.
+ * "cardio" = some cardio done that earned neither Zone 2 nor HIIT; "workout" = a session that earned no other mark.
  * @param {Session[]} sessions
  * @param {Record<string, import('./model.js').Daily>} daily
  * @param {{ stepGoal?: number, sleepGoal?: number }} [goals]
@@ -110,6 +110,7 @@ export function dayMarks(sessions, daily, { stepGoal = GOALS.stepsPerDay, sleepG
     if (c.hiit) add(date, 'hiit');
     const cardio = s.kind === 'watch' ? isCardioType(s.watch?.type) : cardioSeconds(s) > 0;
     if (cardio && !c.zone2 && !c.hiit) add(date, 'cardio');
+    else if (!c.heavy && !c.zone2 && !c.hiit) add(date, 'workout');
   }
   for (const [date, d] of Object.entries(daily || {})) {
     if (stepsOf(d) >= stepGoal) add(date, 'steps');

@@ -256,6 +256,7 @@ textarea.input { min-height: 96px; resize: vertical; }
 .d.m-zone2 { background: var(--good); }
 .d.m-hiit { background: var(--danger); }
 .d.m-cardio { background: var(--rest); }
+.d.m-workout { background: var(--text); }
 .d.m-steps { background: var(--ember); }
 .d.m-sleep { background: #b28cff; }
 .d.m-fallback { background: var(--faint); }

@@ -7,6 +7,7 @@ import { plugin } from './native.js';
 import { METRICS, readTypes, foldAggregate, foldSamples, mergeDays } from '../core/metrics.js';
 import { addDays, dateKey, fromDateKey } from '../core/util.js';
 import { fromPlugin, hrStats, prune } from '../core/watch.js';
+import { effortThreshold, findEfforts } from '../core/effort.js';
 
 const { state } = store;
 const AUTO_EVERY_MS = 15 * 60 * 1000;
@@ -148,8 +149,26 @@ async function doPull({ days } = {}) {
   await store.saveDailies(changed);
   let workouts;
   try { workouts = await pullWorkouts(p, from, now); } catch { failed.push('Workouts'); }
+  try { await pullEfforts(p, now); } catch { /* no heart-rate access: no effort cards */ }
   await saveSettings({ lastSyncAt: now, lastError: read.length ? null : 'Nothing could be read — check Forge’s access in Health Connect', failed });
   return { days: n, read, failed, workouts };
+}
+
+/** Current effort threshold (bpm) from the watch's resting / highest heart rate and Settings. */
+export function currentThreshold(now = Date.now()) {
+  const days = Object.values(state.daily).filter((d) => d.watch && d.date >= dateKey(addDays(now, -30))).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const restingHr = [...days].reverse().find((d) => d.watch.restingHr)?.watch.restingHr;
+  const maxes = days.map((d) => d.watch.hrMax || 0).filter(Boolean);
+  const e = state.settings.effort || {};
+  return effortThreshold({ restingHr, seenMax: maxes.length ? Math.max(...maxes) : null, maxHr: e.maxHr, threshold: e.threshold });
+}
+
+/** All-day heart rate of the last 8 days → stretches of raised heart rate (settings.hrEfforts). */
+async function pullEfforts(p, now) {
+  const from = localMidnight(addDays(now, -7));
+  const r = await p.readSamples({ dataType: 'heartRate', startDate: new Date(from).toISOString(), endDate: new Date(now).toISOString(), limit: 0 });
+  const samples = (r.samples || []).map((s) => ({ t: Date.parse(s.startDate), bpm: s.value }));
+  await store.setSetting('hrEfforts', findEfforts(samples, currentThreshold(now).bpm));
 }
 
 /** Read again when the app opens or comes back, at most every 15 minutes. */

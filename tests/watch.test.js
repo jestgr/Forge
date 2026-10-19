@@ -63,4 +63,15 @@ test('calendar marks per day', () => {
   assert.deepEqual(m[today], ['heavy', 'cardio', 'steps']); // 10 min cardio: not Zone 2; 6.75 h sleep < 7
   assert.deepEqual(m['2026-10-20'], ['fallback']);
   assert.deepEqual(m['2026-10-19'], ['zone2', 'sleep']);
+  // A session that earned nothing still shows it happened.
+  const empty = { id: 'e', kind: 'workout', split: 'lower', status: 'done', startedAt: now - 75 * H, sections: [] };
+  assert.deepEqual(dayMarks(/** @type {any} */ ([empty]), {})[dateKey(now - 75 * H)], ['workout']);
+});
+
+test('calendar fits every mark on one day (2 rows of 4)', async () => {
+  const { MARKS } = await import('../app/js/core/goals.js');
+  const css = (await import('node:fs')).readFileSync(new URL('../app/css/app.css', import.meta.url), 'utf8');
+  const max = Number(css.match(/\.cal \.day \.dots \{[^}]*max-width: (\d+)px/)[1]);
+  const perRow = Math.floor((max + 2) / (6 + 2));
+  assert.ok(perRow * 2 >= MARKS.length, `${perRow} per row`);
 });
