@@ -1,0 +1,18 @@
+{
+  "activeSession": {
+    "id": "1777000000000", "name": "Back/Biceps ", "type": "Back/Biceps", "hasCardio": false,
+    "startTime": 1777000000000, "status": "active", "estimatedDuration": 60,
+    "exercises": [ { "id": "c1", "templateId": "bb_2", "name": "Lat Pulldown", "category": "Resistance", "targetSets": 3, "sets": [] } ]
+  },
+  "customExercises": [
+    { "id": "custom_1700000000009", "name": "Test Band Walk", "category": "Mobility", "targetSplits": ["All"], "equipment": ["Travel", "Bodyweight"], "trackingFields": ["Reps"] }
+  ],
+  "exerciseOverrides": { "lb_1": { "name": "Back Squat (high bar)", "suggestedSets": 5 } },
+  "deletedExerciseIds": ["cs_7"],
+  "history": [],
+  "dailySteps": { "Thu Oct 15 2026": 9100, "Fri Oct 16 2026": 4200, "Sat Oct 17 2026": 0 },
+  "dailySleep": { "Thu Oct 15 2026": 7.5 },
+  "dailyHeartPoints": { "Fri Oct 16 2026": 22 },
+  "activePlanId": "vo2_max_12w",
+  "planStartDate": 1775000000000
+}

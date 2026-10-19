@@ -1,10 +1,13 @@
-# Builds the static app and publishes it to GitHub Pages (https://jestgr.github.io/Forge/)
-# on every push to main. Can also be run by hand from the Actions tab.
+# Publishes https://jestgr.github.io/Forge/ from `main` and a test copy at
+# https://jestgr.github.io/Forge/preview/ from `rework` (if that branch exists).
+# Runs on every push to either branch, or by hand from the Actions tab.
+# New app (has app/): type-check + tests, then app/ is published as-is (no build).
+# Old React app on main (no app/): built with Vite as before.
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, rework]
   workflow_dispatch:
 
 permissions:
@@ -21,17 +24,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run build
+          node-version: 22
+      - name: Assemble site (main at /, rework at /preview/)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p site
+          build() {  # $1 = branch, $2 = output dir
+            local dir="wt-$1"
+            git worktree add --detach "$dir" "origin/$1"
+            pushd "$dir" >/dev/null
+            npm ci --no-audit --no-fund
+            if [ -d app ]; then
+              npm run check
+              popd >/dev/null
+              mkdir -p "$2" && cp -R "$dir/app/." "$2/"
+            else
+              npm run lint && npm run build
+              popd >/dev/null
+              mkdir -p "$2" && cp -R "$dir/dist/." "$2/"
+            fi
+          }
+          build main site
+          if git rev-parse --verify -q origin/rework >/dev/null; then
+            build rework site/preview
+            node wt-rework/tools/make-preview.mjs site/preview
+          fi
+          ls -R site | head -50
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: site
 
   deploy:
     needs: build

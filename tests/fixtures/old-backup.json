@@ -1,0 +1,40 @@
+{
+  "version": "1.0",
+  "exportedAt": "2026-10-14T12:00:00.000Z",
+  "customExercises": [
+    { "id": "custom_1700000000001", "name": "Test Hack Squat", "category": "Resistance", "targetSplits": ["Lower Body"], "equipment": ["Full Gym", "Travel", "Bodyweight"], "trackingFields": ["Weight", "Reps"], "notes": "Feet high", "videoUrl": "https://example.com/v1" },
+    { "id": "custom_1700000000002", "name": "Test Neck Stretch", "category": "Posture", "targetSplits": ["All"], "equipment": ["Full Gym", "Travel", "Bodyweight"], "trackingFields": ["Time"] },
+    { "id": "custom_1700000000003", "name": "Test Cable Row", "category": "Resistance", "targetSplits": ["Back/Biceps", "Core"], "equipment": ["Full Gym"], "trackingFields": ["Weight", "Reps", "RPE"], "suggestedSets": 4, "suggestedReps": "8-12", "suggestedRest": 90 }
+  ],
+  "history": [
+    {
+      "id": "1776000000000", "name": "Lower Body + Cardio", "type": "Lower Body", "hasCardio": true,
+      "startTime": 1776000000000, "endTime": 1776003600000, "status": "completed", "estimatedDuration": 60,
+      "exercises": [
+        { "id": "a1", "templateId": "mob_1", "name": "Spanish Squats", "category": "Mobility", "targetSets": 2, "targetDuration": 60,
+          "sets": [ { "id": "s1", "reps": 0, "time": 60, "rpe": 7, "completed": true, "timestamp": 1776000100000 } ] },
+        { "id": "a2", "templateId": "lb_1", "name": "Barbell Back Squat", "category": "Resistance", "targetSets": 4, "targetReps": 8, "targetRest": 120,
+          "sets": [ { "id": "s2", "reps": 8, "weight": 135, "rpe": 7, "completed": true, "timestamp": 1776000600000 },
+                    { "id": "s3", "reps": 8, "weight": 135, "rpe": 8, "completed": true, "timestamp": 1776000800000 } ] },
+        { "id": "a3", "templateId": "custom_1700000000001", "name": "Test Hack Squat", "category": "Resistance", "targetSets": 3,
+          "notes": "Feet high", "videoUrl": "https://example.com/v1",
+          "sets": [ { "id": "s4", "reps": 10, "weight": 90, "rpe": 7, "completed": true, "timestamp": 1776001200000 } ] },
+        { "id": "a4", "templateId": "card_1", "name": "Treadmill Run/Walk", "category": "Cardio", "targetSets": 1,
+          "sets": [ { "id": "s5", "reps": 0, "time": 1500, "speed": 3.5, "incline": 8, "rpe": 6, "completed": true, "timestamp": 1776003000000 } ] }
+      ]
+    },
+    {
+      "id": "1776500000000", "name": "Chest/Shoulders ", "type": "Chest/Shoulders", "hasCardio": false,
+      "startTime": 1776500000000, "endTime": 1776730000000, "status": "completed", "estimatedDuration": 60,
+      "exercises": [
+        { "id": "b1", "templateId": "cs_1", "name": "Barbell Bench Press", "category": "Resistance", "targetSets": 3,
+          "sets": [ { "id": "s6", "reps": 6, "weight": 155, "rpe": 9, "completed": true, "timestamp": 1776501000000 } ] }
+      ]
+    },
+    {
+      "id": "1776900000000", "name": "Pure Cardio ", "type": "Pure Cardio", "hasCardio": true,
+      "startTime": 1776900000000, "endTime": 1776900060000, "status": "completed", "estimatedDuration": 60, "fitnessBucket": "Zone 2",
+      "exercises": []
+    }
+  ]
+}

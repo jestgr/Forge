@@ -1,0 +1,87 @@
+# Builds the Forge Android app (Capacitor shell around app/) and publishes the signed APK
+# on a GitHub Release with a fixed download link:
+#   rework → https://github.com/jestgr/Forge/releases/download/android-preview/forge.apk
+#   main   → https://github.com/jestgr/Forge/releases/download/android-latest/forge.apk
+# Signing key: repo secrets ANDROID_KEYSTORE_B64 / _PASSWORD / ANDROID_KEY_ALIAS
+# (copy in /etc/homelab/secrets.yaml). The APK contains no personal data.
+name: Android APK
+
+on:
+  push:
+    branches: [rework, main]
+    paths:
+      - 'app/**'
+      - 'android/**'
+      - 'capacitor.config.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name == 'main' && 'android-latest' || 'android-preview' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check
+      - run: npx cap sync android
+      - name: Build signed APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          FORGE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FORGE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          FORGE_VERSION_CODE: ${{ github.run_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_B64" || { echo "::error::Secret ANDROID_KEYSTORE_B64 is missing"; exit 1; }
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/forge.p12"
+          export FORGE_KEYSTORE_FILE="$RUNNER_TEMP/forge.p12"
+          V=$(grep -oE "forge-v[0-9]+" app/js/version.js)
+          export FORGE_VERSION_NAME="${V#forge-}.${{ github.run_number }}"
+          echo "FORGE_VERSION_NAME=$FORGE_VERSION_NAME" >> "$GITHUB_ENV"
+          (cd android && ./gradlew --no-daemon assembleRelease)
+          rm -f "$RUNNER_TEMP/forge.p12"
+          cp android/app/build/outputs/apk/release/app-release.apk forge.apk
+      - name: Check signature (must be the Forge key)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Public SHA-256 of the Forge signing certificate (key in /etc/homelab/secrets.yaml).
+          EXPECTED="0d94e328a6b85be558393b28bbd6ddcc4576b2a3e1027904a2bc7b4cbc23ad90"
+          BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          echo "build-tools $BT"
+          OUT=$("$ANDROID_HOME/build-tools/$BT/apksigner" verify --verbose --print-certs forge.apk 2>&1); RC=$?
+          echo "$OUT" | grep -vE "^WARNING" | head -20
+          [ $RC -eq 0 ] || { echo "::error::apksigner verify failed ($RC)"; exit 1; }
+          echo "$OUT" | grep -qi "certificate SHA-256 digest: $EXPECTED" || { echo "::error::APK is not signed with the Forge key"; exit 1; }
+          echo "Signed with the Forge key."
+      - name: Publish on GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release delete "$TAG" --cleanup-tag -y 2>/dev/null || true
+          gh release create "$TAG" forge.apk --target "$GITHUB_SHA" \
+            ${{ github.ref_name == 'main' && '--latest' || '--prerelease' }} \
+            --title "Forge Android ${FORGE_VERSION_NAME} (${{ github.ref_name }})" \
+            --notes "Built from ${{ github.ref_name }} @ ${GITHUB_SHA::7}. On the phone: download forge.apk, open it, allow installs from Chrome if asked."
