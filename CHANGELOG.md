@@ -18,6 +18,11 @@
 - `fb996f2` Static Vite app published by GitHub Actions to https://jestgr.github.io/Forge/ on merge to `main`. Google Fit and AI Coach switched off (`FIT_ENABLED`/`AI_ENABLED` in `src/App.tsx`); `server.ts`, Dockerfile and server deps removed (still on `feat/cloud-run`). Manifest/SW paths made relative for the `/Forge/` sub-path. `.env.example` removed. Tested: lint + build pass; built site served under `/Forge/` returns 200 for page, SW, manifest, JS, CSS. Not yet tested in a phone browser. Rollback: `git revert fb996f2`
 - Cloud Run plan dropped in favour of GitHub Pages; `feat/cloud-run` kept for reference.
 
+## 2026-10-14 — Merge to main and first GitHub Pages deploy
+- Merge commit `40bf60e` brought `chore/claude-md`, `fix/local-dev`, `feat/cloud-run`, `feat/github-pages` into `main` (Jeff approved). Repo made public and Pages (source: GitHub Actions) enabled by Jeff; old Google OAuth client deleted by Jeff first.
+- Actions run 38627750635 succeeded; https://jestgr.github.io/Forge/ serves page, SW, manifest, JS, CSS (all 200). Not yet confirmed on phone.
+- Rollback: `git revert -m 1 40bf60e` then push `main` (redeploys the previous version).
+
 ## 2026-10-16 — Rework phase 0: brief, plan, decisions (branch `rework`)
 - Added `docs/REWORK.md` (Jeff's brief, watch corrected to Garmin Venu 2), `docs/PLAN.md` (review of current app, conflicts, architecture, data model, migration, phases, tests), `docs/DECISIONS.md`.
 - `.gitignore`: also ignore `forge-backup*.json` and `*backup*.json` (personal data).
