@@ -34,7 +34,19 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- Preflight (Jeff's companion app) reads this week's goals, steps and calories from here. -->
+        <provider
+            android:name=".SummaryProvider"
+            android:authorities="com.jestgr.forge.summary"
+            android:exported="true"
+            android:readPermission="com.jestgr.forge.permission.READ_SUMMARY" />
     </application>
+
+    <permission
+        android:name="com.jestgr.forge.permission.READ_SUMMARY"
+        android:label="Read your Forge weekly summary"
+        android:protectionLevel="normal" />
 
     <!-- Permissions -->
 

@@ -14,6 +14,7 @@ import { startBar } from './ui/sessionbar.js';
 import { keepAwake, allowSleep } from './platform/wakelock.js';
 import { isNative } from './platform/native.js';
 import { startAutoPull } from './platform/healthconnect.js';
+import { publishNow, schedulePublish } from './platform/preflight.js';
 
 /** Routes: hash → screen module with render(root). */
 const ROUTES = {
@@ -104,7 +105,12 @@ async function boot() {
   awake();
   if (message) toast(message, 6000);
   setupServiceWorker();
-  if (isNative()) startAutoPull();
+  if (isNative()) {
+    startAutoPull();
+    // Keep Preflight's copy of this week's goals, steps and calories current.
+    store.subscribe(schedulePublish);
+    publishNow();
+  }
   persist().then((ok) => store.state.settings.persisted !== ok && store.setSetting('persisted', ok));
 }
 
