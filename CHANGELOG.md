@@ -174,3 +174,7 @@
 - `cc12ec9` Android app keeps a small summary (this week's Heavy / Zone 2 / HIIT and step days against goals, today's steps and active calories) up to date after every change and serves it read-only at `content://com.jestgr.forge.summary/summary`, behind the permission `com.jestgr.forge.permission.READ_SUMMARY`. Preflight shows it on its Start page. Browser version unchanged. forge-v18.
 - Files: `app/js/core/share.js` (summary, tested), `app/js/platform/preflight.js` (publish, debounced), `android/.../PreflightSharePlugin.java`, `SummaryProvider.java`, `MainActivity.java` (registers the plugin), `AndroidManifest.xml`.
 - Rollback: `git revert cc12ec9`
+
+## 2026-10-28 — Merge task/preflight-link into main
+- Fast-forward (Jeff tested on the phone: Preflight shows the strip). Publishes forge-v18 to Pages and android-latest.
+- Rollback: Jeff moves main back to b5c8a06-era head (`4c62bea`) and pushes; or `git revert cc12ec9` on a branch.

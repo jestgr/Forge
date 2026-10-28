@@ -9,8 +9,8 @@ Forge's Android app publishes this week's goals + today's steps/calories where P
 ## Done when
 - [x] `core/share.js` summary (same `weekSummary` as the dashboard) + tests; `npm run check` green (102).
 - [x] Published after every data change (debounced) via app-local plugin `PreflightShare`; served by `SummaryProvider`.
-- [ ] APK built by CI (workflow_dispatch on this branch → release `android-preview`) and installed by Jeff.
-- [ ] Preflight shows the row (Preflight branch `task/forge-link`).
+- [x] APK built by CI (run 40752566450) and installed by Jeff; works with Preflight (2026-10-28).
+- [x] Preflight shows the row; merged to main (Jeff, 2026-10-28).
 
 ## Open questions
 (none)
