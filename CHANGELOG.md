@@ -169,3 +169,8 @@
 - Before merge: `tools/check-migration.mjs` on Jeff's real backup (14 Oct) → nothing lost (26/26 sessions, 179/179 entries, 259/259 sets, 66/66 custom exercises); `npm run check` 100 tests pass. Old `chore/log-merge` changelog entry folded in.
 - Effect: https://jestgr.github.io/Forge/ becomes the new app (forge-v17; first open copies the old app's data read-only into database `forge`); the Android workflow publishes release `android-latest` (`forge.apk`). The preview (/Forge/preview/, `android-preview`) keeps following `rework`.
 - Rollback: `git revert -m 1 <merge commit>` on `main` (find it with `git log main --merges -1`), then push `main` — Pages redeploys the old React app.
+
+## 2026-10-28 — Share a weekly summary with Preflight (branch `task/preflight-link`)
+- `cc12ec9` Android app keeps a small summary (this week's Heavy / Zone 2 / HIIT and step days against goals, today's steps and active calories) up to date after every change and serves it read-only at `content://com.jestgr.forge.summary/summary`, behind the permission `com.jestgr.forge.permission.READ_SUMMARY`. Preflight shows it on its Start page. Browser version unchanged. forge-v18.
+- Files: `app/js/core/share.js` (summary, tested), `app/js/platform/preflight.js` (publish, debounced), `android/.../PreflightSharePlugin.java`, `SummaryProvider.java`, `MainActivity.java` (registers the plugin), `AndroidManifest.xml`.
+- Rollback: `git revert cc12ec9`
