@@ -178,3 +178,8 @@
 ## 2026-10-28 — Merge task/preflight-link into main
 - Fast-forward (Jeff tested on the phone: Preflight shows the strip). Publishes forge-v18 to Pages and android-latest.
 - Rollback: Jeff moves main back to b5c8a06-era head (`4c62bea`) and pushes; or `git revert cc12ec9` on a branch.
+
+## 2026-11-02 — Sleep in the Preflight summary (branch `feat/preflight-sleep`)
+- `c339fad` `core/share.js`: the summary Preflight reads now carries `sleepMin` (last night, stored on the wake-up day;
+  typed hours win over the watch; null when unknown) and `sleepGoal` (hours, Settings → Goals). Test added. forge-v19.
+- Rollback: `git revert c339fad`
