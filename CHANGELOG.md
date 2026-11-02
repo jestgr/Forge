@@ -183,3 +183,4 @@
 - `c339fad` `core/share.js`: the summary Preflight reads now carries `sleepMin` (last night, stored on the wake-up day;
   typed hours win over the watch; null when unknown) and `sleepGoal` (hours, Settings → Goals). Test added. forge-v19.
 - Rollback: `git revert c339fad`
+- 2026-11-02: merged `feat/preflight-sleep` into `main` (fast-forward, Jeff's OK). Rollback: move main back to `82953aa`.
