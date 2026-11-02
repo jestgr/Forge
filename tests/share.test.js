@@ -33,3 +33,17 @@ test('Preflight summary: no watch calories → null, own step goal', () => {
   assert.equal(s.steps, 0);
   assert.equal(s.stepGoal, 10000);
 });
+
+test('Preflight summary: last night\'s sleep (watch minutes, typed hours win, goal)', () => {
+  const now = T(2026, 10, 28, 14);
+  const watch = /** @type {any} */ ({ '2026-10-28': { date: '2026-10-28', watch: { sleepMin: 431.6 } } });
+  let s = preflightSummary([], watch, {}, now);
+  assert.equal(s.sleepMin, 432);
+  assert.equal(s.sleepGoal, 7);
+  const typed = /** @type {any} */ ({ '2026-10-28': { date: '2026-10-28', sleepHours: 6.5, watch: { sleepMin: 431 } } });
+  s = preflightSummary([], typed, { sleepGoal: 7.5 }, now);
+  assert.equal(s.sleepMin, 390);
+  assert.equal(s.sleepGoal, 7.5);
+  s = preflightSummary([], /** @type {any} */ ({ '2026-10-27': { date: '2026-10-27', watch: { sleepMin: 480 } } }), {}, now);
+  assert.equal(s.sleepMin, null);
+});
