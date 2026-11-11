@@ -15,7 +15,7 @@ resistance, heart rate) for cardio: shown during the ride and saved as the cardi
 
 ## Progress
 - [x] TASK.md written. Nothing about Echelon/Bluetooth exists in the repo yet.
-- [ ] `core/bike.js` decoder + ride summary + tests.
+- [x] `core/bike.js` decoder + ride summary + tests (110 pass). Waiting on open questions before the connection + UI.
 
 ## Open questions
 1. Which Echelon bike (model, e.g. Connect EX-3 / EX-5 / EX-8s)? Newer ones may also speak standard FTMS.

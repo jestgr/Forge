@@ -184,3 +184,8 @@
   typed hours win over the watch; null when unknown) and `sleepGoal` (hours, Settings → Goals). Test added. forge-v19.
 - Rollback: `git revert c339fad`
 - 2026-11-02: merged `feat/preflight-sleep` into `main` (fast-forward, Jeff's OK). Rollback: move main back to `82953aa`.
+
+## 2026-11-11 — Echelon bike: data decoder (branch `task/echelon-bike-connection`)
+- `ad936b6` `core/bike.js` (+ tests): decodes the bike's Bluetooth data (Echelon's own protocol and standard FTMS
+  Indoor Bike Data) and summarises a ride into a cardio set (time, miles, mph, avg HR). Not wired into the UI yet. forge-v20.
+- Rollback: `git revert ad936b6`
