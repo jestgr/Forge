@@ -189,3 +189,10 @@
 - `ad936b6` `core/bike.js` (+ tests): decodes the bike's Bluetooth data (Echelon's own protocol and standard FTMS
   Indoor Bike Data) and summarises a ride into a cardio set (time, miles, mph, avg HR). Not wired into the UI yet. forge-v20.
 - Rollback: `git revert ad936b6`
+- `f5e09fc` Android: app-local `EchelonBike` plugin (Bluetooth LE: finds a bike named "ECH…", subscribes, writes what JS
+  sends). Bluetooth permissions added to the manifest. Bike counters now count only what was gained after connecting.
+  Rollback: `git revert f5e09fc`
+- `d94db1f` Cardio card (Android app only): **Connect Echelon bike** → live time / miles / rpm / resistance; **Stop & save
+  ride** adds a set (time, miles, mph) and keeps avg/max rpm + avg resistance on the exercise. Finishing the session
+  saves a running ride first; ride time counts toward Zone 2 like any cardio set. UI test with a fake bike.
+  Rollback: `git revert d94db1f`
