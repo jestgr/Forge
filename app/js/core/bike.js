@@ -152,6 +152,8 @@ export function summarise(samples) {
   };
 }
 
+/** @typedef {ReturnType<typeof summarise>} RideSummary */
+
 /**
  * A ride summary as a logged cardio set (Forge stores miles / mph, see FIELDS in model.js).
  * @param {ReturnType<typeof summarise>} s @param {number} at

@@ -17,7 +17,7 @@
  * @typedef {{ kind: '4x4', startedAt: number, completedAt: number|null, hardDone: number, endedAt?: number|null,
  *   pausedMs?: number, pausedAt?: number|null, skipSec?: number }} Protocol
  * @typedef {{ id: string, exerciseId: string, name: string, targets: Targets, tracking?: Field[],
- *   sets: LoggedSet[], protocol?: Protocol|null, legacy?: any }} SessionItem
+ *   sets: LoggedSet[], protocol?: Protocol|null, ride?: import('./bike.js').RideSummary|null, legacy?: any }} SessionItem
  * @typedef {{ category: Category, items: SessionItem[] }} Section
  * @typedef {{ heavy: boolean, zone2: boolean, hiit: boolean, split: Split|null }} Credit
  * @typedef {{ id: string, kind: 'workout'|'fallback'|'watch', name?: string, split: Split|null, includeCardio: boolean,

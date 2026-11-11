@@ -1,6 +1,6 @@
 // Active session: start sheet, sections with +ADD / Switch / Remove / Re-roll,
 // set logging, exercise sheet (last 10 + suggestion), finish / discard.
-import { h, icon, openSheet, sheetHead, toast, confirmSheet, videoButton } from './dom.js';
+import { h, icon, openSheet, sheetHead, toast, confirmSheet, videoButton, refreshSheets } from './dom.js';
 import * as store from '../store.js';
 import * as clock from '../core/clock.js';
 import { CATEGORIES, EQUIPMENT, FIELDS, SESSION_SPLITS, SPLITS, TRACKER_SPLITS, SECTION_WINDOWS, fieldKey, label } from '../core/model.js';
@@ -14,6 +14,8 @@ import { openRunner } from './runner.js';
 import { PROTOCOL_4X4, COOLDOWN } from '../core/model.js';
 import { settle } from '../core/timeline.js';
 import { unlockAudio } from '../platform/cues.js';
+import { bikeAvailable, bikeRide, onBikeChange, startRide, stopRide, cancelRide, reconnect } from '../platform/bike.js';
+import { rideToSet } from '../core/bike.js';
 
 /** @typedef {import('../core/model.js').Session} Session */
 /** @typedef {import('../core/model.js').SessionItem} SessionItem */
@@ -295,8 +297,92 @@ function protocolView(it) {
     } }, 'Restart'));
 }
 
+// ---------- Echelon bike ----------
+// Live numbers refresh the open sheet; a status change (connected, lost…) re-renders the screen too.
+let lastBikeStatus = '';
+onBikeChange(() => {
+  refreshSheets();
+  const st = bikeRide()?.status || '';
+  if (st !== lastBikeStatus) { lastBikeStatus = st; store.emit(); }
+});
+
+const BIKE_STATUS = { scanning: 'Looking for the bike… pedal to wake it', connecting: 'Connecting…', connected: 'Connected', lost: 'Connection lost', failed: 'Not connected' };
+
+async function beginRide(itemId) {
+  const t = now();
+  await update((x) => (x.clockStartedAt == null ? clock.start(x, t) : clock.resume(x, t)));
+  startRide(itemId).catch((e) => toast(e.message));
+  showRide();
+}
+
+/** Stop the ride and save it as a set on its cardio item (with the full summary on the item). */
+async function saveRide() {
+  const r = await stopRide();
+  if (!r) return;
+  if (r.summary.timeSec < 1) { toast('Nothing recorded from the bike'); return; }
+  const set = rideToSet(r.summary, now());
+  await update((x) => {
+    const it = findItem(x, r.itemId)?.item;
+    if (!it) return x;
+    it.sets.push(set);
+    it.ride = r.summary;
+    return clock.afterSet(x, set.at, 0);
+  });
+  toast(`Ride saved — ${fmtClock(r.summary.timeSec)}${r.summary.distanceMi != null ? `, ${r.summary.distanceMi} mi` : ''}`);
+}
+
+function bikeStat(value, name) {
+  return h('div', { class: 'card', style: { padding: '10px', textAlign: 'center' } },
+    h('div', { class: 'mono', style: { fontSize: '28px', fontWeight: 800 } }, value ?? '–'), h('div', { class: 'tiny faint' }, name));
+}
+
+function showRide() {
+  openSheet((close) => {
+    const r = bikeRide();
+    if (!r) return h('div', { class: 'stack' }, sheetHead('Echelon bike', close), h('p', { class: 'muted' }, 'No ride running.'));
+    const live = r.ride.latest();
+    const sum = r.ride.summary();
+    const ok = r.status === 'connected';
+    return h('div', { class: 'stack' },
+      sheetHead('Echelon bike', close),
+      h('div', { class: 'spread' },
+        h('span', { class: 'badge' + (ok ? ' good' : '') }, BIKE_STATUS[r.status]),
+        r.name ? h('span', { class: 'faint small' }, r.name) : null),
+      r.error ? h('p', { class: 'small muted' }, r.error) : null,
+      h('div', { class: 'grid-2' },
+        bikeStat(fmtClock(sum.timeSec), 'time'),
+        bikeStat(sum.distanceMi != null ? sum.distanceMi.toFixed(2) : null, 'miles'),
+        bikeStat(live.cadence != null ? String(Math.round(live.cadence)) : null, 'rpm'),
+        bikeStat(live.resistance != null ? String(live.resistance) : null, 'resistance')),
+      h('p', { class: 'faint small' }, sum.avgCadence != null ? `Average ${sum.avgCadence} rpm${sum.avgSpeedMph != null ? ` · ${sum.avgSpeedMph} mph` : ''}` : 'Start pedalling — numbers appear here.'),
+      r.status === 'failed' || r.status === 'lost' ? h('button', { class: 'btn btn-block', onclick: () => reconnect() }, 'Try again') : null,
+      h('button', { class: 'btn btn-primary btn-big', onclick: async () => { close(); await saveRide(); } }, icon('check'), 'Stop & save ride'),
+      h('button', { class: 'btn btn-danger btn-block', onclick: async () => {
+        if (await confirmSheet('Cancel the ride?', 'Nothing from the bike is saved.', { ok: 'Cancel ride', cancel: 'Keep riding', danger: true })) { close(); await cancelRide(); }
+      } }, 'Cancel ride'));
+  }, { label: 'Echelon bike' });
+}
+
+function bikeView(it) {
+  if (!bikeAvailable()) return null;
+  const r = bikeRide();
+  const style = { margin: '0 16px 14px', width: 'calc(100% - 32px)' };
+  if (r?.itemId === it.id) return h('button', { class: 'btn btn-primary btn-block', style, onclick: showRide }, icon('bolt'), `Bike: ${BIKE_STATUS[r.status].toLowerCase()} — open`);
+  if (r) return null; // riding on another exercise
+  return h('div', { style: { padding: '0 16px 14px' } },
+    h('button', { class: 'btn btn-block', onclick: () => beginRide(it.id) }, 'Connect Echelon bike'),
+    it.ride ? h('p', { class: 'faint small', style: { marginTop: '6px' } }, rideText(it.ride)) : null);
+}
+
+/** One line for a saved ride. @param {NonNullable<SessionItem['ride']>} x */
+export function rideText(x) {
+  return [x.avgCadence != null && `${x.avgCadence} rpm avg`, x.maxCadence != null && `max ${x.maxCadence}`,
+    x.avgResistance != null && `resistance ${x.avgResistance}`].filter(Boolean).join(' · ');
+}
+
 // ---------- finish / discard ----------
-export function openFinishSheet() {
+export async function openFinishSheet() {
+  if (bikeRide()) await saveRide(); // a ride still going is saved first, so it counts
   const s = store.activeSession();
   if (!s) return;
   const sets = s.sections.reduce((n, x) => n + x.items.reduce((m, i) => m + i.sets.length, 0), 0);
@@ -312,7 +398,7 @@ export function openFinishSheet() {
     h('p', { class: 'faint small' }, 'Exercises without logged sets are left out of history.'),
     sets ? h('button', { class: 'btn btn-primary btn-big', onclick: async () => { close(); await finish(); } }, icon('check'), 'Save session') : null,
     h('button', { class: 'btn btn-danger btn-block', onclick: async () => {
-      if (await confirmSheet('Discard this session?', 'Nothing from it will be saved.', { ok: 'Discard', danger: true })) { close(); await store.deleteSession(s.id); location.hash = '#/'; toast('Session discarded'); }
+      if (await confirmSheet('Discard this session?', 'Nothing from it will be saved.', { ok: 'Discard', danger: true })) { close(); if (bikeRide()) await cancelRide(); await store.deleteSession(s.id); location.hash = '#/'; toast('Session discarded'); }
     } }, 'Discard session')), { label: 'Finish session' });
 }
 
@@ -384,6 +470,7 @@ function itemView(it, category) {
         class: 'set-pill', onclick: (e) => { e.stopPropagation(); openLogSheet(it.id, category, i); },
       }, summarizeSets([st])))) : null),
     category === 'cardio' ? protocolView(it) : null,
+    category === 'cardio' ? bikeView(it) : null,
     h('div', { class: 'ex-actions' },
       h('button', { class: 'btn btn-primary', style: { flex: 2 }, onclick: () => openLogSheet(it.id, category) }, icon('plus'), 'Log set'),
       videoButton(store.exerciseById(it.exerciseId)?.videoUrl || it.legacy?.videoUrl, it.name),

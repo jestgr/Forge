@@ -27,6 +27,7 @@ const ASSETS = [
   './js/core/goals.js',
   './js/core/share.js',
   './js/core/bike.js',
+  './js/platform/bike.js',
   './js/core/backup.js',
   './js/core/generator.js',
   './js/core/progress.js',
