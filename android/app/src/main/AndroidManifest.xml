@@ -52,6 +52,15 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Echelon bike over Bluetooth LE (EchelonBikePlugin). Android 12+: scan/connect, not used for location.
+         Android 11 and older need location permission to scan. -->
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="s" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
     <!-- Health Connect: read-only. The health plugin also declares write permissions; remove them. -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
     <uses-permission android:name="android.permission.health.WRITE_STEPS" tools:node="remove" />

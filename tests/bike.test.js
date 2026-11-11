@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  checksum, echelonCommand, ECHELON_INIT, decodeEchelon, decodeFtmsBike, createRide, rideToSet,
+  checksum, echelonCommand, gained, ECHELON_INIT, decodeEchelon, decodeFtmsBike, createRide, rideToSet,
 } from '../app/js/core/bike.js';
 
 const withSum = (/** @type {number[]} */ b) => Uint8Array.from([...b, checksum(b)]);
@@ -54,6 +54,7 @@ test('FTMS: packet shorter than its flags → null', () => {
 test('ride summary: carries resistance forward, skips stopped samples, becomes a cardio set', () => {
   const ride = createRide();
   ride.add({ resistance: 10 }, 0);
+  ride.add({ elapsedSec: 0, distanceKm: 0, cadence: 0 }, 0);
   ride.add({ elapsedSec: 60, distanceKm: 0.5, cadence: 80 }, 60_000);
   ride.add({ resistance: 20 }, 61_000);
   ride.add({ elapsedSec: 120, distanceKm: 1.0, cadence: 90 }, 120_000);
@@ -67,4 +68,19 @@ test('ride summary: carries resistance forward, skips stopped samples, becomes a
   assert.equal(s.avgResistance, 15);
   assert.equal(s.avgHr, null);
   assert.deepEqual(rideToSet(s, 5), { at: 5, timeSec: 1200, distance: 5, speed: 15 });
+});
+
+test('counters: only what was gained after connecting; a console reset starts again from 0', () => {
+  const s = (/** @type {number[]} */ v) => v.map((elapsedSec, i) => ({ elapsedSec, at: i }));
+  assert.equal(gained(s([300, 360, 420]), 'elapsedSec'), 120);
+  assert.equal(gained(s([300, 360, 10, 70]), 'elapsedSec'), 60 + 10 + 60);
+  assert.equal(gained([], 'distanceKm'), null);
+});
+
+test('no elapsed counter → wall-clock time', () => {
+  const ride = createRide();
+  ride.add({ cadence: 70 }, 1000);
+  ride.add({ cadence: 72 }, 601_000);
+  assert.equal(ride.summary().timeSec, 600);
+  assert.equal(ride.summary().distanceMi, null);
 });

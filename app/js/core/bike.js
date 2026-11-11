@@ -115,14 +115,28 @@ export function createRide() {
 }
 
 /**
+ * How much a bike counter (elapsed time, distance) went up during the ride. The console counts from its own
+ * start, which can be before Forge connected, so only increases count; a drop means the console was reset
+ * and counting starts again from 0. Null if the bike never sent it.
+ * @param {(BikeReading & { at: number })[]} samples @param {'elapsedSec'|'distanceKm'} k
+ */
+export function gained(samples, k) {
+  const vs = samples.map((x) => x[k]).filter((v) => typeof v === 'number');
+  if (!vs.length) return null;
+  let total = 0;
+  for (let i = 1; i < vs.length; i++) total += vs[i] >= vs[i - 1] ? vs[i] - vs[i - 1] : vs[i];
+  return total;
+}
+
+/**
  * @param {(BikeReading & { at: number })[]} samples
  */
 export function summarise(samples) {
   const moving = samples.filter((s) => (s.cadence ?? 0) > 0);
   const pick = (/** @type {keyof BikeReading} */ k) => moving.map((s) => s[k]).filter((v) => typeof v === 'number');
-  const lastOf = (/** @type {keyof BikeReading} */ k) => [...samples].reverse().find((s) => typeof s[k] === 'number')?.[k];
-  const timeSec = lastOf('elapsedSec') ?? (samples.length ? Math.round((samples[samples.length - 1].at - samples[0].at) / 1000) : 0);
-  const distanceKm = lastOf('distanceKm') ?? null;
+  const elapsed = gained(samples, 'elapsedSec');
+  const timeSec = elapsed ?? (samples.length ? Math.round((samples[samples.length - 1].at - samples[0].at) / 1000) : 0);
+  const distanceKm = gained(samples, 'distanceKm');
   // Average speed from total distance / time when the bike reports both, else from speed readings.
   const avgSpeedKmh = distanceKm != null && timeSec > 0 ? distanceKm / (timeSec / 3600) : avg(pick('speedKmh'));
   const n = (/** @type {number|null} */ v, d = 0) => (v == null ? null : round(v, d));
