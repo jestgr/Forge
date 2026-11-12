@@ -16,7 +16,7 @@ rpm / estimated watts / resistance / time / distance / speed / kcal; stop → ch
       and screenshots in headless Chrome (portrait, landscape). `npm run check` green (125).
 - [x] Committed; on-bike checklist in `docs/ECHELON-TEST.md`.
 - [x] Pushed (Jeff, 2026-11-12); CI run 43220192459 built + signed the APK (Java compiles) → release `android-preview`.
-- [ ] Jeff: on-bike test with `docs/ECHELON-TEST.md`.
+- [ ] Jeff: on-bike test with `docs/ECHELON-TEST.md` (APK installed 2026-11-12). Passdown: `docs/PASSDOWN.md`.
 
 ## Progress
 - [x] Decoder + tests; native plugin; first UI (2026-11-11).

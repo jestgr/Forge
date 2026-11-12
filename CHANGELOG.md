@@ -204,3 +204,4 @@
   simulator (works in the browser too). Docs: `docs/ECHELON-TEST.md` (on-bike checklist). forge-v20.
   Rollback: `git revert 59b4e70`
 - 2026-11-12: pushed `task/echelon-bike-connection` (Jeff's OK); Android run 43220192459 → APK on release `android-preview` (commit `0ca081d`). Rollback: re-run the workflow on `rework` to restore the previous preview APK.
+- 2026-11-12: `docs/PASSDOWN.md` — state of the Echelon work and how to pick it up. Rollback: git revert <this commit>
