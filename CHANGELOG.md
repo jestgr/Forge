@@ -196,3 +196,10 @@
   ride** adds a set (time, miles, mph) and keeps avg/max rpm + avg resistance on the exercise. Finishing the session
   saves a running ride first; ride time counts toward Zone 2 like any cardio set. UI test with a fake bike.
   Rollback: `git revert d94db1f`
+- 2026-11-12 `59b4e70` Echelon ride, full version (Jeff's answers): bike button only on bike exercises (Stationary Bike or
+  library tag "Echelon bike"); Pure Cardio → full-screen ride view, cardio add-on → small live panel in the card;
+  rpm / estimated watts / resistance big, time / miles / mph / kcal small; dropout → retries every 5 s for 2 min, ride
+  kept, then Reconnect; Stop → chart of every second (touch for values) → Log set pre-filled to check; saved: summary +
+  small chart picture (no per-second data); calories from watts, compared with the watch in History; Settings → Bike
+  simulator (works in the browser too). Docs: `docs/ECHELON-TEST.md` (on-bike checklist). forge-v20.
+  Rollback: `git revert 59b4e70`
