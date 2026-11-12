@@ -203,3 +203,4 @@
   small chart picture (no per-second data); calories from watts, compared with the watch in History; Settings → Bike
   simulator (works in the browser too). Docs: `docs/ECHELON-TEST.md` (on-bike checklist). forge-v20.
   Rollback: `git revert 59b4e70`
+- 2026-11-12: pushed `task/echelon-bike-connection` (Jeff's OK); Android run 43220192459 → APK on release `android-preview` (commit `0ca081d`). Rollback: re-run the workflow on `rework` to restore the previous preview APK.

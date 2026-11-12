@@ -15,7 +15,8 @@ rpm / estimated watts / resistance / time / distance / speed / kcal; stop → ch
 - [x] Simulator (Settings → Bike simulator); tested in mock mode: UI tests (fake plugin + simulator incl. dropout)
       and screenshots in headless Chrome (portrait, landscape). `npm run check` green (125).
 - [x] Committed; on-bike checklist in `docs/ECHELON-TEST.md`.
-- [ ] Jeff's OK to push → CI builds the APK (Java compiled only there) → on-bike test.
+- [x] Pushed (Jeff, 2026-11-12); CI run 43220192459 built + signed the APK (Java compiles) → release `android-preview`.
+- [ ] Jeff: on-bike test with `docs/ECHELON-TEST.md`.
 
 ## Progress
 - [x] Decoder + tests; native plugin; first UI (2026-11-11).
@@ -24,5 +25,4 @@ rpm / estimated watts / resistance / time / distance / speed / kcal; stop → ch
 - [x] Charts + saved picture (D55); ride flow (D56); library tag (D57); simulator.
 
 ## Open questions
-1. OK to push `task/echelon-bike-connection` and start the Android workflow on it by hand? The APK goes to the
-   `android-preview` release (replaces the current preview APK); main / android-latest untouched.
+(none — waiting for the on-bike test)
