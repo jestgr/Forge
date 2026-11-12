@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  checksum, echelonCommand, gained, ECHELON_INIT, decodeEchelon, decodeFtmsBike, createRide, rideToSet,
+  checksum, echelonCommand, gained, ECHELON_INIT, decodeEchelon, decodeFtmsBike, createRide, rideValues,
+  estWatts, kcalFrom, perSecond, isBikeExercise, watchMatch,
 } from '../app/js/core/bike.js';
 
 const withSum = (/** @type {number[]} */ b) => Uint8Array.from([...b, checksum(b)]);
@@ -67,7 +68,10 @@ test('ride summary: carries resistance forward, skips stopped samples, becomes a
   assert.equal(s.maxCadence, 90);
   assert.equal(s.avgResistance, 15);
   assert.equal(s.avgHr, null);
-  assert.deepEqual(rideToSet(s, 5), { at: 5, timeSec: 1200, distance: 5, speed: 15 });
+  assert.deepEqual(rideValues(s), { time: 1200, distance: 5, speed: 15 });
+  assert.equal(s.avgWatts, Math.round((estWatts(80, 10) + estWatts(90, 20)) / 2));
+  assert.equal(s.startedAt, 0);
+  assert.equal(s.endedAt, 1_200_000);
 });
 
 test('counters: only what was gained after connecting; a console reset starts again from 0', () => {
@@ -83,4 +87,54 @@ test('no elapsed counter → wall-clock time', () => {
   ride.add({ cadence: 72 }, 601_000);
   assert.equal(ride.summary().timeSec, 600);
   assert.equal(ride.summary().distanceMi, null);
+});
+
+test('estimated watts (echbt / gymnasticon fit); 0 when stopped or resistance unknown', () => {
+  assert.equal(estWatts(80, 10), Math.round(1.090112 ** 10 * 1.015343 ** 80 * 7.228958));
+  assert.equal(estWatts(80, 10), 58); // 57.9 rounded (the brief says round; echbt truncates)
+  assert.equal(estWatts(0, 10), 0);
+  assert.equal(estWatts(80, 0), 0);
+  assert.equal(estWatts(80, undefined), 0);
+});
+
+test('live samples carry estimated watts; measured power wins', () => {
+  const ride = createRide();
+  ride.add({ resistance: 10 }, 0);
+  assert.equal(ride.add({ cadence: 80 }, 1000).powerW, 58);
+  const ftms = createRide();
+  assert.equal(ftms.add({ cadence: 80, resistance: 10, powerW: 150 }, 0).powerW, 150);
+  assert.equal(ftms.add({ cadence: 80 }, 1000).powerW, 150);
+});
+
+test('calories ≈ kJ of work; gaps over 5 s (dropout) add nothing', () => {
+  const s = (/** @type {[number, number][]} */ v) => v.map(([at, powerW]) => ({ at, powerW }));
+  assert.equal(kcalFrom(s([[0, 100], [1000, 100], [2000, 100]])), 0.2); // 100 W × 2 s = 200 J
+  assert.equal(kcalFrom(s([[0, 100], [60_000, 100]])), 0);
+  const ride = createRide();
+  ride.add({ resistance: 10 }, 0);
+  for (let i = 0; i <= 600; i++) ride.add({ cadence: 80, elapsedSec: i }, i * 1000);
+  assert.equal(ride.summary().kcal, Math.round(58 * 600 / 1000));
+});
+
+test('per-second series: last reading per second, gaps left out', () => {
+  const pts = perSecond([{ at: 0, cadence: 70, powerW: 50 }, { at: 400, cadence: 72, powerW: 52 }, { at: 1000, cadence: 74, powerW: 54, resistance: 9 }, { at: 9000, cadence: 80, powerW: 60 }]);
+  assert.deepEqual(pts.map((p) => p.t), [0, 1, 9]);
+  assert.equal(pts[0].cadence, 72);
+  assert.equal(pts[1].resistance, 9);
+});
+
+test('bike exercises: Stationary Bike by default, the library tag decides', () => {
+  assert.equal(isBikeExercise({ id: 'card_2' }), true);
+  assert.equal(isBikeExercise({ id: 'card_2', bike: false }), false);
+  assert.equal(isBikeExercise({ id: 'card_v3' }), false);
+  assert.equal(isBikeExercise({ id: 'card_v3', bike: true }), true);
+  assert.equal(isBikeExercise(undefined), false);
+});
+
+test('watch workout overlapping at least half the ride is used for the calorie comparison', () => {
+  const ride = { startedAt: 1000, endedAt: 2000 };
+  const w = (/** @type {string} */ id, start, end) => ({ id, type: 'biking', start, end, durationSec: 0, kcal: 300 });
+  assert.equal(watchMatch(ride, { a: w('a', 1900, 5000) }), null);
+  assert.equal(watchMatch(ride, { a: w('a', 1900, 5000), b: w('b', 900, 1800) })?.id, 'b');
+  assert.equal(watchMatch({ startedAt: null, endedAt: null }, { b: w('b', 900, 1800) }), null);
 });

@@ -1,6 +1,7 @@
 // Exercise library: browse / search / filter, add / edit / delete.
 // The same browser doubles as the picker for Switch and +ADD in a session.
 import { h, icon, openSheet, sheetHead, toast, confirmSheet, videoButton } from './dom.js';
+import { isBikeExercise } from '../core/bike.js';
 import * as store from '../store.js';
 import { CATEGORIES, SPLITS, EQUIPMENT, FIELDS, label } from '../core/model.js';
 import { builtinExercises } from '../core/migrate.js';
@@ -138,6 +139,9 @@ export function editExercise(ex) {
     chipGroup(SPLITS, () => d.splits, (v) => toggle(d.splits, v)),
     h('span', { class: 'tiny faint' }, 'Equipment mode'),
     chipGroup(EQUIPMENT, () => d.equipment, (v) => toggle(d.equipment, v)),
+    h('span', { class: 'tiny faint' }, 'Machine'),
+    h('div', { class: 'row-wrap' }, h('button', { type: 'button', class: 'chip', 'aria-pressed': String(isBikeExercise(d)),
+      onclick: (e) => { d.bike = !isBikeExercise(d); e.currentTarget.setAttribute('aria-pressed', String(d.bike)); } }, 'Echelon bike')),
     h('span', { class: 'tiny faint' }, 'Log per set'),
     chipGroup(FIELDS.map((x) => [x[0], x[1]]), () => d.tracking, (v) => toggle(d.tracking, v)),
     h('div', { class: 'grid-2' },

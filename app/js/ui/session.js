@@ -1,6 +1,6 @@
 // Active session: start sheet, sections with +ADD / Switch / Remove / Re-roll,
 // set logging, exercise sheet (last 10 + suggestion), finish / discard.
-import { h, icon, openSheet, sheetHead, toast, confirmSheet, videoButton, refreshSheets } from './dom.js';
+import { h, icon, openSheet, sheetHead, toast, confirmSheet, videoButton } from './dom.js';
 import * as store from '../store.js';
 import * as clock from '../core/clock.js';
 import { CATEGORIES, EQUIPMENT, FIELDS, SESSION_SPLITS, SPLITS, TRACKER_SPLITS, SECTION_WINDOWS, fieldKey, label } from '../core/model.js';
@@ -14,8 +14,10 @@ import { openRunner } from './runner.js';
 import { PROTOCOL_4X4, COOLDOWN } from '../core/model.js';
 import { settle } from '../core/timeline.js';
 import { unlockAudio } from '../platform/cues.js';
-import { bikeAvailable, bikeRide, onBikeChange, startRide, stopRide, cancelRide, reconnect } from '../platform/bike.js';
-import { rideToSet } from '../core/bike.js';
+import { bikeRide, startRide, stopRide, cancelRide } from '../platform/bike.js';
+import { rideValues, isBikeExercise } from '../core/bike.js';
+import { thumbnail } from '../core/chart.js';
+import { bikePanel, openRideView, openRideDone } from './ride.js';
 
 /** @typedef {import('../core/model.js').Session} Session */
 /** @typedef {import('../core/model.js').SessionItem} SessionItem */
@@ -180,20 +182,24 @@ function stepper(f, values) {
       h('button', { class: 'icon-btn', type: 'button', 'aria-label': `More ${name}`, onclick: () => bump(STEP[f]) }, '+')));
 }
 
-/** Log a new set, or edit / delete set number `setIndex`. */
-function openLogSheet(itemId, category, setIndex = null) {
+/**
+ * Log a new set, or edit / delete set number `setIndex`. `preset` (from a bike ride) pre-fills the values and
+ * adds its fields (e.g. distance) even if the exercise doesn't track them; saving marks the ride as logged.
+ */
+function openLogSheet(itemId, category, setIndex = null, preset = null) {
   const s = store.activeSession();
   const item = findItem(s, itemId)?.item;
   if (!item) return;
   const editing = setIndex !== null;
-  const fields = fieldsFor(item);
+  const own = fieldsFor(item);
+  const fields = preset ? FIELDS.map((x) => x[0]).filter((f) => own.includes(f) || f in preset) : own;
   const values = editing
     ? Object.fromEntries(fields.map((f) => [f, item.sets[setIndex][fieldKey(f)] ?? '']))
-    : prefill(item, category, s.id);
-  const tip = !editing && !item.sets.length ? suggest(exerciseHistory(item.exerciseId, state.sessions, 10, s.id), item.targets, category) : null;
+    : { ...prefill(item, category, s.id), ...(preset || {}) };
+  const tip = !editing && !preset && !item.sets.length ? suggest(exerciseHistory(item.exerciseId, state.sessions, 10, s.id), item.targets, category) : null;
 
   openSheet((close) => h('div', { class: 'stack' },
-    sheetHead(editing ? `Set ${setIndex + 1}` : `Set ${item.sets.length + 1}`, close),
+    sheetHead(editing ? `Set ${setIndex + 1}` : preset ? 'Log ride' : `Set ${item.sets.length + 1}`, close),
     h('p', null, h('strong', null, item.name), ' ', h('span', { class: 'target' }, targetText(effectiveTargets(item.targets, category)))),
     tip ? h('p', { class: 'small muted' }, tip.text) : null,
     ...fields.map((f) => stepper(f, values)),
@@ -207,6 +213,7 @@ function openLogSheet(itemId, category, setIndex = null) {
         if (!it) return x;
         if (editing) { it.sets[setIndex] = set; return x; }
         it.sets.push(set);
+        if (preset && it.ride) it.ride.logged = true;
         let y = x.clockStartedAt == null ? clock.start(x, set.at) : clock.resume(x, set.at);
         return clock.afterSet(y, set.at, category === 'cardio' ? 0 : effectiveTargets(it.targets, category).restSec || 0);
       });
@@ -298,103 +305,59 @@ function protocolView(it) {
 }
 
 // ---------- Echelon bike ----------
-// Live numbers refresh the open sheet; a status change (connected, lost…) re-renders the screen too.
-let lastBikeStatus = '';
-onBikeChange(() => {
-  refreshSheets();
-  const st = bikeRide()?.status || '';
-  if (st !== lastBikeStatus) { lastBikeStatus = st; store.emit(); }
-});
-
-const BIKE_STATUS = { scanning: 'Looking for the bike… pedal to wake it', connecting: 'Connecting…', connected: 'Connected', lost: 'Connection lost', failed: 'Not connected' };
+// Pure Cardio rides in a full-screen view; a cardio add-on gets a small live panel in its card. On stop the
+// ride (summary + small chart picture) is kept on the exercise, the full chart is shown, then Log set opens
+// pre-filled so the values can be checked before saving.
+const isPureCardio = () => store.activeSession()?.split === 'pure-cardio';
 
 async function beginRide(itemId) {
+  const it = findItem(store.activeSession(), itemId)?.item;
+  if (it?.ride && !it.ride.logged && !(await confirmSheet('Ride again?', 'The last ride on this exercise isn’t logged yet; a new ride replaces it.', { ok: 'Ride again' }))) return;
   const t = now();
   await update((x) => (x.clockStartedAt == null ? clock.start(x, t) : clock.resume(x, t)));
   startRide(itemId).catch((e) => toast(e.message));
-  showRide();
+  if (isPureCardio()) openRideView(endRide);
 }
 
-/** Stop the ride and save it as a set on its cardio item (with the full summary on the item). */
-async function saveRide() {
+/** Stop the ride, keep it on the exercise, show the chart. */
+async function endRide() {
   const r = await stopRide();
   if (!r) return;
-  if (r.summary.timeSec < 1) { toast('Nothing recorded from the bike'); return; }
-  const set = rideToSet(r.summary, now());
-  await update((x) => {
-    const it = findItem(x, r.itemId)?.item;
-    if (!it) return x;
-    it.sets.push(set);
-    it.ride = r.summary;
-    return clock.afterSet(x, set.at, 0);
-  });
-  toast(`Ride saved — ${fmtClock(r.summary.timeSec)}${r.summary.distanceMi != null ? `, ${r.summary.distanceMi} mi` : ''}`);
+  if (r.series.length < 2 && r.summary.timeSec < 1) { toast('Nothing recorded from the bike'); return; }
+  const ride = { ...r.summary, chart: r.series.length > 1 ? thumbnail(r.series) : null, logged: false };
+  await update((x) => { const it = findItem(x, r.itemId)?.item; if (it) it.ride = ride; });
+  openRideDone(ride, r.series, () => logRide(r.itemId));
 }
 
-function bikeStat(value, name) {
-  return h('div', { class: 'card', style: { padding: '10px', textAlign: 'center' } },
-    h('div', { class: 'mono', style: { fontSize: '28px', fontWeight: 800 } }, value ?? '–'), h('div', { class: 'tiny faint' }, name));
-}
-
-function showRide() {
-  openSheet((close) => {
-    const r = bikeRide();
-    if (!r) return h('div', { class: 'stack' }, sheetHead('Echelon bike', close), h('p', { class: 'muted' }, 'No ride running.'));
-    const live = r.ride.latest();
-    const sum = r.ride.summary();
-    const ok = r.status === 'connected';
-    return h('div', { class: 'stack' },
-      sheetHead('Echelon bike', close),
-      h('div', { class: 'spread' },
-        h('span', { class: 'badge' + (ok ? ' good' : '') }, BIKE_STATUS[r.status]),
-        r.name ? h('span', { class: 'faint small' }, r.name) : null),
-      r.error ? h('p', { class: 'small muted' }, r.error) : null,
-      h('div', { class: 'grid-2' },
-        bikeStat(fmtClock(sum.timeSec), 'time'),
-        bikeStat(sum.distanceMi != null ? sum.distanceMi.toFixed(2) : null, 'miles'),
-        bikeStat(live.cadence != null ? String(Math.round(live.cadence)) : null, 'rpm'),
-        bikeStat(live.resistance != null ? String(live.resistance) : null, 'resistance')),
-      h('p', { class: 'faint small' }, sum.avgCadence != null ? `Average ${sum.avgCadence} rpm${sum.avgSpeedMph != null ? ` · ${sum.avgSpeedMph} mph` : ''}` : 'Start pedalling — numbers appear here.'),
-      r.status === 'failed' || r.status === 'lost' ? h('button', { class: 'btn btn-block', onclick: () => reconnect() }, 'Try again') : null,
-      h('button', { class: 'btn btn-primary btn-big', onclick: async () => { close(); await saveRide(); } }, icon('check'), 'Stop & save ride'),
-      h('button', { class: 'btn btn-danger btn-block', onclick: async () => {
-        if (await confirmSheet('Cancel the ride?', 'Nothing from the bike is saved.', { ok: 'Cancel ride', cancel: 'Keep riding', danger: true })) { close(); await cancelRide(); }
-      } }, 'Cancel ride'));
-  }, { label: 'Echelon bike' });
+function logRide(itemId) {
+  const it = findItem(store.activeSession(), itemId)?.item;
+  if (it?.ride) openLogSheet(itemId, 'cardio', null, rideValues(it.ride));
 }
 
 function bikeView(it) {
-  if (!bikeAvailable()) return null;
-  const r = bikeRide();
-  const style = { margin: '0 16px 14px', width: 'calc(100% - 32px)' };
-  if (r?.itemId === it.id) return h('button', { class: 'btn btn-primary btn-block', style, onclick: showRide }, icon('bolt'), `Bike: ${BIKE_STATUS[r.status].toLowerCase()} — open`);
-  if (r) return null; // riding on another exercise
-  return h('div', { style: { padding: '0 16px 14px' } },
-    h('button', { class: 'btn btn-block', onclick: () => beginRide(it.id) }, 'Connect Echelon bike'),
-    it.ride ? h('p', { class: 'faint small', style: { marginTop: '6px' } }, rideText(it.ride)) : null);
-}
-
-/** One line for a saved ride. @param {NonNullable<SessionItem['ride']>} x */
-export function rideText(x) {
-  return [x.avgCadence != null && `${x.avgCadence} rpm avg`, x.maxCadence != null && `max ${x.maxCadence}`,
-    x.avgResistance != null && `resistance ${x.avgResistance}`].filter(Boolean).join(' · ');
+  if (!isBikeExercise(store.exerciseById(it.exerciseId))) return null;
+  return bikePanel(it, { full: isPureCardio(), start: () => beginRide(it.id), stop: endRide, log: () => logRide(it.id) });
 }
 
 // ---------- finish / discard ----------
 export async function openFinishSheet() {
-  if (bikeRide()) await saveRide(); // a ride still going is saved first, so it counts
+  if (bikeRide()) { await endRide(); return; } // stop the ride first: chart → Log set, then Finish again
   const s = store.activeSession();
   if (!s) return;
   const sets = s.sections.reduce((n, x) => n + x.items.reduce((m, i) => m + i.sets.length, 0), 0);
   const t = clock.totals(s, now());
   const c = computeCredit(s);
   const earned = [c.heavy && 'Heavy', c.zone2 && 'Zone 2', c.hiit && 'HIIT', c.split && `${label(SPLITS, c.split)} ✓`].filter(Boolean);
+  const unlogged = s.sections.flatMap((x) => x.items).filter((i) => i.ride && !i.ride.logged);
   openSheet((close) => h('div', { class: 'stack' },
     sheetHead('Finish session', close),
     h('div', { class: 'grid-3' },
       stat(fmtClock(t.totalSec), 'total'), stat(fmtClock(t.workSec), 'work'), stat(fmtClock(t.restSec), 'rest')),
     h('p', null, `${sets} sets logged.`),
     h('div', { class: 'row-wrap' }, earned.length ? earned.map((e) => h('span', { class: 'badge good' }, e)) : h('span', { class: 'muted small' }, 'Counts toward no weekly goal yet.')),
+    unlogged.length ? h('div', { class: 'card stack' },
+      h('p', { class: 'small' }, 'A bike ride isn’t logged yet, so it doesn’t count toward goals.'),
+      ...unlogged.map((it) => h('button', { class: 'btn btn-block', onclick: () => { close(); logRide(it.id); } }, icon('plus'), `Log ride: ${it.name}`))) : null,
     h('p', { class: 'faint small' }, 'Exercises without logged sets are left out of history.'),
     sets ? h('button', { class: 'btn btn-primary btn-big', onclick: async () => { close(); await finish(); } }, icon('check'), 'Save session') : null,
     h('button', { class: 'btn btn-danger btn-block', onclick: async () => {
@@ -421,7 +384,7 @@ async function finish() {
     y.endedAt = t;
     y.status = 'done';
     y.rest = null;
-    for (const sec of y.sections) sec.items = sec.items.filter((i) => i.sets.length || i.protocol);
+    for (const sec of y.sections) sec.items = sec.items.filter((i) => i.sets.length || i.protocol || i.ride);
     y.sections = y.sections.filter((sec) => sec.items.length);
     return y;
   });

@@ -9,7 +9,7 @@
  *
  * @typedef {{ sets?: number|null, reps?: number|string|null, restSec?: number|null, durationSec?: number|null }} Targets
  * @typedef {{ id: string, name: string, categories: Category[], splits: Split[], equipment: Equip[],
- *   tracking: Field[], targets: Targets, notes?: string, videoUrl?: string,
+ *   tracking: Field[], targets: Targets, notes?: string, videoUrl?: string, bike?: boolean,
  *   builtIn: boolean, modified?: boolean, deleted?: boolean, updatedAt?: number }} Exercise
  *
  * @typedef {{ at: number, reps?: number, weight?: number, timeSec?: number, distance?: number,

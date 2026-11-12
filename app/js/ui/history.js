@@ -8,6 +8,8 @@ import { summarizeSets } from '../core/progress.js';
 import { dateKey, fmtDate, fmtMinutes, fmtNum } from '../core/util.js';
 import { totals } from '../core/clock.js';
 import { openDailySheet } from './dashboard.js';
+import { savedRide } from './ride.js';
+import { watchMatch } from '../core/bike.js';
 import { FIELDS, stepsOf, sleepHoursOf } from '../core/metrics.js';
 
 /** @typedef {import('../core/model.js').Session} Session */
@@ -30,6 +32,16 @@ function badges(s) {
 }
 
 // ---------- session detail ----------
+/** Saved bike ride + calories compared with the watch, when the watch recorded the same workout. */
+function rideBlock(ride) {
+  const w = watchMatch(ride, state.settings.watchWorkouts);
+  return h('div', { class: 'stack', style: { gap: '4px' } },
+    savedRide(ride),
+    w?.kcal != null && ride.kcal != null
+      ? h('p', { class: 'small muted' }, `Calories: Forge estimate ${ride.kcal} · watch ${Math.round(w.kcal)} (${Math.round(w.kcal) >= ride.kcal ? '+' : ''}${Math.round(w.kcal) - ride.kcal})`)
+      : null);
+}
+
 export function openSessionDetail(id) {
   openSheet((close) => {
     const s = state.sessions.find((x) => x.id === id);
@@ -62,7 +74,8 @@ export function openSessionDetail(id) {
         ...sec.items.map((it) => h('div', { class: 'spread small' },
           h('span', null, it.name, it.protocol ? h('span', { class: 'badge' + (it.protocol.completedAt ? ' good' : ''), style: { marginLeft: '6px' } },
             it.protocol.completedAt ? '4×4 ✓' : `4×4 ${it.protocol.hardDone}/4`) : null),
-          h('span', { class: 'mono', style: { textAlign: 'right' } }, summarizeSets(it.sets)))))),
+          h('span', { class: 'mono', style: { textAlign: 'right' } }, summarizeSets(it.sets)))),
+        ...sec.items.filter((it) => it.ride).map((it) => rideBlock(it.ride)))),
       h('button', { class: 'btn btn-danger btn-block', onclick: async () => {
         if (await confirmSheet('Delete this session?', 'It is removed from history and weekly goals.', { ok: 'Delete', danger: true })) {
           close(); await store.deleteSession(s.id); toast('Session deleted');

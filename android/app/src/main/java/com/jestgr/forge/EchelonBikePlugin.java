@@ -48,6 +48,9 @@ import java.util.UUID;
 )
 public class EchelonBikePlugin extends Plugin {
 
+    /** Advertised by the bike (seen while scanning). */
+    static final UUID ADVERTISED = UUID.fromString("0bf669f0-45f2-11e7-9598-0800200c9a66");
+    /** The service that carries the data (after connecting). */
     static final UUID SERVICE = UUID.fromString("0bf669f1-45f2-11e7-9598-0800200c9a66");
     static final UUID WRITE = UUID.fromString("0bf669f2-45f2-11e7-9598-0800200c9a66");
     static final UUID NOTIFY = UUID.fromString("0bf669f4-45f2-11e7-9598-0800200c9a66");
@@ -119,7 +122,7 @@ public class EchelonBikePlugin extends Plugin {
     @SuppressLint("MissingPermission")
     private static boolean isBike(ScanResult r) {
         ScanRecord rec = r.getScanRecord();
-        if (rec != null && rec.getServiceUuids() != null && rec.getServiceUuids().contains(new ParcelUuid(SERVICE))) return true;
+        if (rec != null && rec.getServiceUuids() != null && (rec.getServiceUuids().contains(new ParcelUuid(ADVERTISED)) || rec.getServiceUuids().contains(new ParcelUuid(SERVICE)))) return true;
         String name = rec != null && rec.getDeviceName() != null ? rec.getDeviceName() : r.getDevice().getName();
         return name != null && name.toUpperCase().startsWith("ECH");
     }

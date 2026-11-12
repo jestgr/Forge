@@ -93,24 +93,45 @@ const round = (/** @type {number} */ x, /** @type {number} */ d = 0) => Math.rou
 const avg = (/** @type {number[]} */ xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
 /**
+ * Estimated watts for an Echelon bike, which doesn't send power (fit used by snowzach/echbt and gymnasticon).
+ * 0 when not pedalling or resistance unknown / 0.
+ * @param {number|undefined} cadence rpm @param {number|undefined} resistance 1–32
+ */
+export function estWatts(cadence, resistance) {
+  if (!cadence || !resistance) return 0;
+  return Math.round(1.090112 ** resistance * 1.015343 ** cadence * 7.228958);
+}
+
+/** Gaps longer than this (e.g. while disconnected) don't add energy. */
+const MAX_GAP_SEC = 5;
+
+/** @typedef {BikeReading & { at: number }} Sample */
+
+/**
  * Collects readings during a ride. Echelon sends resistance separately, so the latest value is carried
- * into the following data samples. Averages leave out stopped moments (cadence 0).
+ * into the following data samples. Power: the bike's own if it sends one, else estimated (estWatts).
+ * Averages leave out stopped moments (cadence 0).
  */
 export function createRide() {
-  /** @type {(BikeReading & { at: number })[]} */
+  /** @type {Sample[]} */
   const samples = [];
   /** @type {BikeReading} */
   let last = {};
+  let measuredPower = false;
   return {
     /** @param {BikeReading} r @param {number} at ms */
     add(r, at) {
+      if (r.powerW != null) measuredPower = true;
       last = { ...last, ...r };
+      if (!measuredPower) last.powerW = estWatts(last.cadence, last.resistance);
       // A resistance-only packet just updates the state; samples are taken on ride data, so nothing counts twice.
       if (Object.keys(r).some((k) => k !== 'resistance')) samples.push({ ...last, at });
       return last;
     },
     latest: () => last,
     summary: () => summarise(samples),
+    series: () => perSecond(samples),
+    samples: () => samples,
   };
 }
 
@@ -118,7 +139,7 @@ export function createRide() {
  * How much a bike counter (elapsed time, distance) went up during the ride. The console counts from its own
  * start, which can be before Forge connected, so only increases count; a drop means the console was reset
  * and counting starts again from 0. Null if the bike never sent it.
- * @param {(BikeReading & { at: number })[]} samples @param {'elapsedSec'|'distanceKm'} k
+ * @param {Sample[]} samples @param {'elapsedSec'|'distanceKm'} k
  */
 export function gained(samples, k) {
   const vs = samples.map((x) => x[k]).filter((v) => typeof v === 'number');
@@ -129,7 +150,37 @@ export function gained(samples, k) {
 }
 
 /**
- * @param {(BikeReading & { at: number })[]} samples
+ * Energy from power over time. kcal ≈ kJ of work: the body is ~24 % efficient on a bike and 1 kcal = 4.184 kJ,
+ * so the two cancel out almost exactly (common rule of thumb for cycling).
+ * @param {Sample[]} samples
+ */
+export function kcalFrom(samples) {
+  let joules = 0;
+  for (let i = 1; i < samples.length; i++) {
+    const dt = (samples[i].at - samples[i - 1].at) / 1000;
+    if (dt > 0 && dt <= MAX_GAP_SEC) joules += (samples[i - 1].powerW || 0) * dt;
+  }
+  return joules / 1000;
+}
+
+/**
+ * One point per second since the first sample (last reading in that second). Seconds without data
+ * (e.g. while disconnected) are left out, so the chart shows a gap.
+ * @param {Sample[]} samples
+ * @returns {{ t: number, cadence: number, watts: number, resistance: number|null }[]}
+ */
+export function perSecond(samples) {
+  if (!samples.length) return [];
+  const t0 = samples[0].at;
+  /** @type {Map<number, Sample>} */
+  const by = new Map();
+  for (const x of samples) by.set(Math.round((x.at - t0) / 1000), x);
+  return [...by.entries()].sort((a, b) => a[0] - b[0])
+    .map(([t, x]) => ({ t, cadence: x.cadence ?? 0, watts: x.powerW ?? 0, resistance: x.resistance ?? null }));
+}
+
+/**
+ * @param {Sample[]} samples
  */
 export function summarise(samples) {
   const moving = samples.filter((s) => (s.cadence ?? 0) > 0);
@@ -140,30 +191,61 @@ export function summarise(samples) {
   // Average speed from total distance / time when the bike reports both, else from speed readings.
   const avgSpeedKmh = distanceKm != null && timeSec > 0 ? distanceKm / (timeSec / 3600) : avg(pick('speedKmh'));
   const n = (/** @type {number|null} */ v, d = 0) => (v == null ? null : round(v, d));
+  const max = (/** @type {number[]} */ xs) => (xs.length ? Math.max(...xs) : null);
   return {
+    startedAt: samples[0]?.at ?? null,
+    endedAt: samples[samples.length - 1]?.at ?? null,
     timeSec,
     distanceMi: n(distanceKm == null ? null : distanceKm / KM_PER_MI, 2),
     avgSpeedMph: n(avgSpeedKmh == null ? null : avgSpeedKmh / KM_PER_MI, 1),
     avgCadence: n(avg(pick('cadence'))),
-    maxCadence: pick('cadence').length ? Math.max(...pick('cadence')) : null,
+    maxCadence: max(pick('cadence')),
     avgResistance: n(avg(pick('resistance')), 1),
-    avgPowerW: n(avg(pick('powerW'))),
+    avgWatts: n(avg(pick('powerW'))),
+    maxWatts: max(pick('powerW')),
+    kcal: samples.length > 1 ? Math.round(kcalFrom(samples)) : null,
     avgHr: n(avg(pick('hr'))),
   };
 }
 
-/** @typedef {ReturnType<typeof summarise>} RideSummary */
+/**
+ * A saved ride: the summary plus a small picture of its chart (`chart`, an SVG data URL) and whether a set
+ * was logged from it.
+ * @typedef {ReturnType<typeof summarise> & { chart?: string|null, logged?: boolean }} RideSummary
+ */
 
 /**
- * A ride summary as a logged cardio set (Forge stores miles / mph, see FIELDS in model.js).
- * @param {ReturnType<typeof summarise>} s @param {number} at
- * @returns {import('./model.js').LoggedSet}
+ * Values for the Log set sheet, by tracking field (Forge stores miles / mph, see FIELDS in model.js).
+ * @param {ReturnType<typeof summarise>} s
+ * @returns {Partial<Record<import('./model.js').Field, number>>}
  */
-export function rideToSet(s, at) {
-  /** @type {import('./model.js').LoggedSet} */
-  const set = { at, timeSec: s.timeSec };
-  if (s.distanceMi != null) set.distance = s.distanceMi;
-  if (s.avgSpeedMph != null) set.speed = s.avgSpeedMph;
-  if (s.avgHr != null) set.hr = s.avgHr;
-  return set;
+export function rideValues(s) {
+  /** @type {Partial<Record<import('./model.js').Field, number>>} */
+  const v = { time: s.timeSec };
+  if (s.distanceMi != null) v.distance = s.distanceMi;
+  if (s.avgSpeedMph != null) v.speed = s.avgSpeedMph;
+  if (s.avgHr != null) v.hr = s.avgHr;
+  return v;
+}
+
+/** Bike exercises get the Connect button: tagged "Echelon bike" in the library, or the built-in Stationary Bike
+ * unless that tag was switched off. @param {{ id: string, bike?: boolean }|undefined} ex */
+export const isBikeExercise = (ex) => !!ex && (ex.bike ?? ex.id === 'card_2');
+
+/**
+ * A watch workout that overlaps the ride (to compare calories), if any.
+ * @param {{ startedAt: number|null, endedAt: number|null }} ride
+ * @param {Record<string, import('./watch.js').WatchWorkout>|undefined} workouts
+ */
+export function watchMatch(ride, workouts) {
+  if (ride.startedAt == null || ride.endedAt == null) return null;
+  const len = ride.endedAt - ride.startedAt;
+  let best = null;
+  let bestOverlap = 0;
+  for (const w of Object.values(workouts || {})) {
+    const overlap = Math.min(w.end, ride.endedAt) - Math.max(w.start, ride.startedAt);
+    // "Similar" = overlaps at least half of the ride.
+    if (overlap > bestOverlap && overlap >= len / 2) { best = w; bestOverlap = overlap; }
+  }
+  return best;
 }
