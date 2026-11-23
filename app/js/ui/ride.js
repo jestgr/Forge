@@ -3,8 +3,11 @@
 // of re-rendering the page every second. Saving is done by session.js through the callbacks given here.
 import { h, icon, openSheet, confirmSheet, refreshSheets } from './dom.js';
 import * as store from '../store.js';
-import { bikeAvailable, bikeRide, onBikeChange, reconnect, simDrop, cancelRide } from '../platform/bike.js';
-import { seriesSvg, plotBox, pointAt, WATTS_COLOR, CADENCE_COLOR } from '../core/chart.js';
+import { bikeAvailable, bikeRide, onBikeChange, reconnect, simDrop, cancelRide, connectHeartRate } from '../platform/bike.js';
+import { hrAvailable, hrLink, simHrDrop } from '../platform/hr.js';
+import { seriesSvg, plotBox, pointAt, liveSvg, liveBox, liveStart, hrSvg, LIVE_WINDOW, WATTS_COLOR, CADENCE_COLOR, RESIST_COLOR, HR_COLOR } from '../core/chart.js';
+import { hrZone, zoneBounds, ZONE_NAMES, ZONE_COLORS } from '../core/hr.js';
+import { BEST_WINDOWS } from '../core/bike.js';
 import { fmtClock } from '../core/util.js';
 
 /** @typedef {import('../core/bike.js').RideSummary} RideSummary */
@@ -15,28 +18,58 @@ export const STATUS = {
   reconnecting: 'Connection lost — reconnecting…', failed: 'Not connected',
 };
 
+export const HR_STATUS = {
+  scanning: 'Looking for heart rate…', connecting: 'Connecting heart rate…', connected: 'Heart rate',
+  reconnecting: 'Heart rate lost — reconnecting…', failed: 'No heart rate',
+};
+
+/** The summary is recomputed only when a new sample arrived (it walks the whole ride). */
+let sumCache = { ride: /** @type {any} */ (null), n: -1, s: /** @type {any} */ (null) };
+function liveSummary(/** @type {NonNullable<ReturnType<typeof bikeRide>>} */ r) {
+  const n = r.ride.samples().length;
+  if (sumCache.ride !== r || sumCache.n !== n) sumCache = { ride: r, n, s: r.ride.summary() };
+  return sumCache.s;
+}
+
+/** Heart-rate zone of the current reading (0 = none). */
+function liveZone() {
+  const r = bikeRide();
+  const bpm = r?.ride.latest().hr;
+  return r && bpm ? hrZone(bpm, r.maxHr) : 0;
+}
+
 /** Live values by key, as text. */
 function liveText() {
   const r = bikeRide();
   if (!r) return {};
   const live = r.ride.latest();
-  const sum = r.ride.summary();
+  const sum = liveSummary(r);
   const num = (/** @type {number|undefined|null} */ v) => (v == null ? '–' : String(Math.round(v)));
+  const z = liveZone();
   return {
-    cadence: num(live.cadence), watts: num(live.powerW), resistance: num(live.resistance),
+    cadence: num(live.cadence), watts: num(live.powerW), resistance: num(live.resistance), hr: num(live.hr),
+    zone: z ? `Z${z} ${ZONE_NAMES[z]}` : live.hr ? 'below Z1' : '',
     time: fmtClock(sum.timeSec), distance: sum.distanceMi != null ? sum.distanceMi.toFixed(2) : '–',
     speed: sum.avgSpeedMph != null ? sum.avgSpeedMph.toFixed(1) : '–', kcal: num(sum.kcal),
+    avgWatts: num(sum.avgWatts), maxWatts: num(sum.maxWatts), avgCadence: num(sum.avgCadence),
     status: STATUS[r.status],
   };
 }
 
 let lastStatus = '';
+let lastChartAt = 0;
 onBikeChange(() => {
   const r = bikeRide();
-  const st = r ? `${r.status}|${r.error || ''}` : '';
+  const hl = hrLink();
+  const st = r ? `${r.status}|${r.error || ''}|${hl ? `${hl.status}|${hl.error || ''}|${hl.name || ''}` : '-'}` : '';
   if (st !== lastStatus) { lastStatus = st; refreshSheets(); store.emit(); return; } // layout changes
   for (const [k, v] of Object.entries(liveText())) {
     for (const el of document.querySelectorAll(`.bk-${k}`)) el.textContent = v;
+  }
+  for (const el of document.querySelectorAll('.bk-zone')) /** @type {HTMLElement} */ (el).style.color = ZONE_COLORS[liveZone()];
+  if (Date.now() - lastChartAt >= 1000) {
+    lastChartAt = Date.now();
+    for (const el of document.querySelectorAll('.bk-chart')) /** @type {any} */ (el).render?.();
   }
 });
 
@@ -59,8 +92,96 @@ function statusBlock() {
     r.status === 'failed' ? h('button', { class: 'btn btn-block', onclick: () => reconnect() }, icon('sync'), 'Reconnect') : null);
 }
 
-/** Simulator only: a small button to test reconnecting. */
-const simButton = () => (bikeRide()?.sim && bikeRide()?.status === 'connected' ? h('button', { class: 'btn btn-sm', onclick: simDrop }, 'Simulate dropout') : null);
+/** Simulator only: small buttons to test reconnecting. */
+const simButton = () => (bikeRide()?.sim && bikeRide()?.status === 'connected'
+  ? h('div', { class: 'row-wrap' },
+    h('button', { class: 'btn btn-sm', onclick: simDrop }, 'Simulate dropout'),
+    hrLink()?.status === 'connected' ? h('button', { class: 'btn btn-sm', onclick: simHrDrop }, 'Simulate HR dropout') : null)
+  : null);
+
+/** Heart-rate big number with its zone underneath. */
+const hrBig = () => h('div', { class: 'bike-big' },
+  h('div', { class: 'bike-num bk-hr', style: { color: HR_COLOR } }, liveText().hr ?? '–'),
+  h('div', { class: 'tiny faint' }, 'bpm'),
+  h('div', { class: 'tiny bk-zone', style: { color: ZONE_COLORS[liveZone()], fontWeight: '800' } }, liveText().zone ?? ''));
+
+/** Heart-rate link: connect button, status, retry. Null when heart rate isn't possible (browser, no simulator). */
+function hrBlock() {
+  if (!hrAvailable() || !bikeRide()) return null;
+  const l = hrLink();
+  if (!l) return h('button', { class: 'btn btn-sm', onclick: () => connectHeartRate() }, icon('heart'), 'Connect heart rate');
+  const good = l.status === 'connected';
+  return h('div', { class: 'stack', style: { gap: '4px' } },
+    h('div', { class: 'spread' },
+      h('span', { class: 'badge' + (good ? ' good' : l.status === 'reconnecting' ? ' accent' : '') }, HR_STATUS[l.status]),
+      h('span', { class: 'faint small' }, [l.name, l.sim ? '(simulator)' : ''].filter(Boolean).join(' '))),
+    l.status === 'scanning' ? h('p', { class: 'small muted' }, 'On the Garmin: turn on Broadcast Heart Rate (controls menu, or Settings → Wrist Heart Rate).') : null,
+    l.status === 'failed' ? h('p', { class: 'small muted' }, `${l.error ? `${l.error}. ` : ''}Turn on Broadcast Heart Rate on the watch, then try again.`) : null,
+    l.status === 'failed' ? h('button', { class: 'btn btn-sm', onclick: () => connectHeartRate() }, icon('sync'), 'Try heart rate again') : null);
+}
+
+/**
+ * Live chart: watts + resistance over the last 15 minutes. Drag sideways to look back in time (the chart then
+ * stays put); "Live" jumps back to now. Touching shows the values at that moment.
+ */
+function liveChart() {
+  const W = 340; const H = 150;
+  const b = liveBox(W, H);
+  const plot = h('div', { class: 'ride-chart' });
+  const info = h('span', { class: 'tiny faint' });
+  const liveBtn = h('button', { class: 'btn btn-sm', hidden: true, onclick: () => { wrap.pin = null; wrap.render(); } }, 'Live ▸');
+  const legend = () => {
+    info.replaceChildren(h('span', { style: { color: WATTS_COLOR } }, '— watts'), '  ', h('span', { style: { color: RESIST_COLOR } }, '— resistance'),
+      wrap.pin != null ? `  · ${fmtClock(liveStart(wrap.pin))}–${fmtClock(liveStart(wrap.pin) + LIVE_WINDOW)}` : '  · last 15 min');
+  };
+  const wrap = /** @type {any} */ (h('div', { class: 'ride-chart-wrap bk-chart' }, plot));
+  wrap.pin = /** @type {number|null} */ (null);
+  const pts = () => bikeRide()?.ride.series() ?? [];
+  const lastT = (/** @type {any[]} */ p) => (p.length ? p[p.length - 1].t : 0);
+  wrap.render = () => {
+    const p = pts();
+    plot.innerHTML = liveSvg(p, { end: wrap.pin ?? lastT(p), width: W, height: H });
+    liveBtn.hidden = wrap.pin == null;
+    if (!drag) legend();
+  };
+  /** @type {{ x: number, end: number }|null} */
+  let drag = null;
+  const tAt = (/** @type {PointerEvent} */ e, /** @type {number} */ end) => {
+    const rect = wrap.getBoundingClientRect();
+    const fx = ((e.clientX - rect.left) / rect.width) * W;
+    return liveStart(end) + ((fx - b.left) / (b.right - b.left)) * LIVE_WINDOW;
+  };
+  const show = (/** @type {PointerEvent} */ e, /** @type {any[]} */ p, /** @type {number} */ end) => {
+    const pt = pointAt(p.filter((x) => x.t >= liveStart(end) && x.t <= liveStart(end) + LIVE_WINDOW), tAt(e, end));
+    if (pt) info.textContent = `${pt.label} · ${Math.round(pt.watts)} W · res ${pt.resistance ?? '–'} · ${Math.round(pt.cadence)} rpm${pt.hr ? ` · ${pt.hr} bpm` : ''}`;
+  };
+  wrap.onpointerdown = (/** @type {PointerEvent} */ e) => {
+    const p = pts();
+    drag = { x: e.clientX, end: wrap.pin ?? lastT(p) };
+    show(e, p, drag.end);
+  };
+  wrap.onpointermove = (/** @type {PointerEvent} */ e) => {
+    if (!drag) return;
+    const p = pts();
+    const rect = wrap.getBoundingClientRect();
+    const plotPx = rect.width * ((b.right - b.left) / W);
+    const end = drag.end - ((e.clientX - drag.x) / plotPx) * LIVE_WINDOW;
+    const last = lastT(p);
+    if (Math.abs(e.clientX - drag.x) > 4) {
+      wrap.pin = end >= last - 1 ? null : Math.max(Math.min(LIVE_WINDOW, last), end);
+      plot.innerHTML = liveSvg(p, { end: wrap.pin ?? last, width: W, height: H });
+      liveBtn.hidden = wrap.pin == null;
+    }
+    show(e, p, wrap.pin ?? last);
+  };
+  wrap.onpointerup = wrap.onpointercancel = () => { drag = null; setTimeout(() => { if (!drag) legend(); }, 2500); };
+  wrap.render();
+  return h('div', { class: 'stack', style: { gap: '4px' } }, h('div', { class: 'spread' }, info, liveBtn), wrap);
+}
+
+/** Live averages row. */
+const averages = () => h('div', { class: 'row-wrap', style: { justifyContent: 'space-between' } },
+  small('avgWatts', 'W avg'), small('maxWatts', 'W max'), small('avgCadence', 'rpm avg'));
 
 /**
  * The bike part of a cardio card.
@@ -74,8 +195,11 @@ export function bikePanel(it, o) {
     if (o.full) return h('div', { style: pad }, h('button', { class: 'btn btn-primary btn-block', onclick: () => openRideView(o.stop) }, icon('bolt'), 'Ride running — open'));
     return h('div', { class: 'bike-panel', style: { margin: '0 16px 14px' } },
       statusBlock(),
-      h('div', { class: 'grid-3' }, big('cadence', 'rpm'), big('watts', 'watts (est.)'), big('resistance', 'resistance')),
+      hrBlock(),
+      h('div', { class: hrAvailable() ? 'grid-4 bike-bigs' : 'grid-3' }, big('cadence', 'rpm'), big('watts', 'watts (est.)'), big('resistance', 'resistance'), hrAvailable() ? hrBig() : null),
       h('div', { class: 'row-wrap', style: { justifyContent: 'space-between' } }, small('time', ''), small('distance', 'mi'), small('speed', 'mph'), small('kcal', 'kcal')),
+      averages(),
+      liveChart(),
       h('button', { class: 'btn btn-primary btn-block', onclick: o.stop }, icon('check'), 'Stop ride'),
       simButton());
   }
@@ -99,7 +223,8 @@ export function savedRide(x) {
 export function rideText(x) {
   return [fmtClock(x.timeSec), x.distanceMi != null && `${x.distanceMi} mi`, x.avgCadence != null && `${x.avgCadence} rpm avg`,
     x.avgWatts != null && `${x.avgWatts} W avg`, x.maxWatts != null && `max ${x.maxWatts} W`,
-    x.avgResistance != null && `resistance ${x.avgResistance}`, x.kcal != null && `~${x.kcal} kcal`].filter(Boolean).join(' · ');
+    x.avgResistance != null && `resistance ${x.avgResistance}`, x.avgHr != null && `${x.avgHr} bpm avg`,
+    x.kcal != null && `~${x.kcal} kcal`].filter(Boolean).join(' · ');
 }
 
 /** Full-screen ride view (Pure Cardio). Minimise keeps riding. @param {() => void} stop */
@@ -111,10 +236,13 @@ export function openRideView(stop) {
       h('div', { class: 'spread' }, h('h2', null, 'Echelon ride'),
         h('button', { class: 'icon-btn sm', 'aria-label': 'Minimise', onclick: close }, icon('back'))),
       statusBlock(),
+      hrBlock(),
       h('div', { class: 'ride-live' },
         h('div', { class: 'ride-time mono bk-time' }, liveText().time),
-        h('div', { class: 'ride-bigs' }, big('cadence', 'rpm'), big('watts', 'watts (est.)'), big('resistance', 'resistance')),
-        h('div', { class: 'grid-3' }, small('distance', 'mi'), small('speed', 'mph'), small('kcal', 'kcal'))),
+        h('div', { class: 'ride-bigs' + (hrAvailable() ? ' four' : '') }, big('cadence', 'rpm'), big('watts', 'watts (est.)'), big('resistance', 'resistance'), hrAvailable() ? hrBig() : null),
+        h('div', { class: 'grid-3' }, small('distance', 'mi'), small('speed', 'mph'), small('kcal', 'kcal')),
+        averages(),
+        liveChart()),
       simButton(),
       h('div', { class: 'ride-actions' },
         h('button', { class: 'btn btn-primary btn-big', onclick: () => { close(); stop(); } }, icon('check'), 'Stop ride'),
@@ -152,6 +280,81 @@ function chartBlock(pts, key, title, color) {
     h('div', { class: 'ride-chart-wrap', onpointermove: move, onpointerdown: move, onpointerleave: hide }, plot, cross, tip));
 }
 
+const WINDOW_NAMES = { 60: '1 min', 300: '5 min', 1200: '20 min' };
+
+/**
+ * Best watts over 1 / 5 / 20 minutes from all saved rides except the one that started at `except`.
+ * @param {number|null} except
+ * @returns {Record<number, number>}
+ */
+export function allTimeBests(except) {
+  /** @type {Record<number, number>} */
+  const out = {};
+  for (const s of store.state.sessions) {
+    for (const sec of s.sections || []) {
+      for (const it of sec.items || []) {
+        const r = /** @type {any} */ (it).ride;
+        if (!r?.best || r.startedAt === except) continue;
+        for (const w of BEST_WINDOWS) if (r.best[w] != null && r.best[w] > (out[w] ?? 0)) out[w] = r.best[w];
+      }
+    }
+  }
+  return out;
+}
+
+/** Best 1 / 5 / 20 minutes, with the all-time best next to it. @param {RideSummary} sum */
+function bestBlock(sum) {
+  if (!sum.best || BEST_WINDOWS.every((w) => sum.best[w] == null)) return null;
+  const ever = allTimeBests(sum.startedAt);
+  return h('div', { class: 'stack', style: { gap: '4px' } },
+    h('span', { class: 'tiny faint' }, 'Best efforts (watts, estimated)'),
+    ...BEST_WINDOWS.filter((w) => sum.best[w] != null).map((w) => {
+      const v = /** @type {number} */ (sum.best[w]);
+      const prev = ever[w];
+      return h('div', { class: 'spread small' },
+        h('span', null, WINDOW_NAMES[/** @type {60|300|1200} */ (w)]),
+        h('span', null, h('b', { class: 'mono' }, `${v} W`), ' ',
+          prev == null ? h('span', { class: 'faint' }, 'first one')
+            : v > prev ? h('span', { class: 'badge good' }, `New best (was ${prev})`)
+              : h('span', { class: 'faint' }, `best ever ${prev}`)));
+    }));
+}
+
+/** Time in each heart-rate zone as bars. @param {RideSummary} sum */
+function zoneBlock(sum) {
+  if (!sum.zones || !sum.zoneMaxHr) return null;
+  const total = sum.zones.reduce((a, b) => a + b, 0) || 1;
+  const bounds = zoneBounds(sum.zoneMaxHr);
+  return h('div', { class: 'stack', style: { gap: '4px' } },
+    h('span', { class: 'tiny faint' }, `Time in heart-rate zones (max ${sum.zoneMaxHr} bpm)`),
+    ...[5, 4, 3, 2, 1, 0].map((z) => h('div', { class: 'zone-row small' },
+      h('span', { class: 'zone-name' }, z ? `Z${z} ${ZONE_NAMES[z]}` : 'Below Z1'),
+      h('span', { class: 'zone-bar' }, h('span', { style: { width: `${(sum.zones[z] / total) * 100}%`, background: ZONE_COLORS[z] } })),
+      h('span', { class: 'mono zone-time' }, fmtClock(sum.zones[z])),
+      h('span', { class: 'faint tiny zone-range' }, z ? `${bounds[z - 1].from}${bounds[z - 1].to ? `–${bounds[z - 1].to}` : '+'}` : ''))));
+}
+
+/** Per-5-minute splits. @param {RideSummary} sum */
+function splitsBlock(sum) {
+  if (!sum.splits || sum.splits.length < 2) return null;
+  const m = (/** @type {number} */ s) => Math.round(s / 60);
+  return h('div', { class: 'stack', style: { gap: '2px' } },
+    h('span', { class: 'tiny faint' }, 'Splits (5 min)'),
+    h('table', { class: 'splits small' },
+      h('tr', null, ...['min', 'W', 'rpm', 'res', 'bpm'].map((x) => h('th', null, x))),
+      ...sum.splits.map((x) => h('tr', null,
+        h('td', null, `${m(x.from)}–${m(x.to)}`), h('td', { class: 'mono' }, x.avgWatts ?? '–'), h('td', { class: 'mono' }, x.avgCadence ?? '–'),
+        h('td', { class: 'mono' }, x.avgResistance ?? '–'), h('td', { class: 'mono' }, x.avgHr ?? '–')))));
+}
+
+/** Heart-rate chart (whole ride) if there was heart rate. @param {RideSummary} sum @param {Point[]} pts */
+function hrChart(sum, pts) {
+  if (pts.filter((p) => p.hr).length < 2) return null;
+  return h('div', { class: 'stack', style: { gap: '4px' } },
+    h('span', { class: 'tiny faint' }, `Heart rate (avg ${sum.avgHr ?? '–'}, max ${sum.maxHr ?? '–'})`),
+    h('div', { class: 'ride-chart', html: hrSvg(pts, { maxHr: sum.zoneMaxHr }) }));
+}
+
 /**
  * End of ride: the charts from every second, the summary, and "Log this ride".
  * @param {RideSummary} sum @param {Point[]} pts @param {() => void} log
@@ -160,8 +363,13 @@ export function openRideDone(sum, pts, log) {
   openSheet((close) => h('div', { class: 'stack' },
     h('div', { class: 'spread' }, h('h2', null, 'Ride done'), h('button', { class: 'icon-btn sm', 'aria-label': 'Close', onclick: close }, icon('x'))),
     h('p', { class: 'muted small' }, rideText(sum)),
+    sum.workKj != null ? h('p', { class: 'faint small' }, `Work ${sum.workKj} kJ (estimated from watts)${sum.maxHr ? ` · max heart rate ${sum.maxHr}` : ''}`) : null,
     pts.length > 1 ? chartBlock(pts, 'watts', 'Watts (estimated)', WATTS_COLOR) : h('p', { class: 'faint small' }, 'Not enough data for a chart.'),
     pts.length > 1 ? chartBlock(pts, 'cadence', 'Cadence (rpm)', CADENCE_COLOR) : null,
+    hrChart(sum, pts),
+    bestBlock(sum),
+    zoneBlock(sum),
+    splitsBlock(sum),
     h('p', { class: 'faint small' }, 'Touch a chart to see the values at that moment. Only the summary and a small picture are saved.'),
     h('button', { class: 'btn btn-primary btn-big', onclick: () => { close(); log(); } }, icon('plus'), 'Log this ride'),
   ), { full: true, label: 'Ride done' });

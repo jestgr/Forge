@@ -50,9 +50,9 @@ export const simHrDrop = () => { if (link?.sim) sim?.drop(); };
  * @param {{ onBpm: (bpm: number|null) => void, changed: () => void }} h
  */
 export async function startHr(h) {
+  await stopHr();
   const p = hr();
   if (!p) return;
-  await stopHr();
   hooks = h;
   const me = /** @type {HrLink} */ ({ status: 'scanning', bpm: null, lastAt: 0, lostAt: null, sim: simOn() });
   link = me;

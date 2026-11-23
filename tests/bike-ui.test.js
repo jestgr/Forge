@@ -45,6 +45,7 @@ const live = (key) => body.querySelector(`.bk-${key}`)?.textContent;
 
 const { store } = await import('../app/js/app.js').then(() => g.forge);
 const bike = await import('../app/js/platform/bike.js');
+const hr = await import('../app/js/platform/hr.js');
 await tick(60);
 
 /** Put a Stationary Bike into the active session's cardio section. */
@@ -89,12 +90,18 @@ test('A: cardio add-on → live panel in the card → chart → Log ride pre-fil
   assert.equal(live('resistance'), '12');
   assert.equal(live('watts'), String(Math.round(1.090112 ** 12 * 1.015343 ** 88 * 7.228958)));
   assert.equal(live('time'), '20:00', 'time gained since connecting');
+  assert.equal(live('avgCadence'), '88', 'live averages');
+  assert.ok(body.querySelector('.bk-chart'), 'live chart');
+  assert.ok(!has('Connect heart rate'), 'no heart-rate button without the HeartRate plugin');
 
   await click('Stop ride');
   await tick(50);
   assert.equal(connected, false);
   assert.ok(has('Ride done'));
   assert.ok(body.querySelector('.ride-chart'), 'chart shown');
+  assert.ok(has('Best efforts') && has('20 min') && has('first one'), 'best efforts, nothing to compare with yet');
+  assert.ok(has('Splits (5 min)') && has('15–20'), 'splits');
+  assert.ok(has('Work ') && has(' kJ'), 'work');
   const it0 = store.activeSession().sections.flatMap((x) => x.items).find((i) => i.id === 'bike1');
   assert.ok(it0.ride && !it0.ride.logged, 'ride kept before logging');
   assert.ok(it0.ride.chart.startsWith('data:image/svg+xml,'));
@@ -122,8 +129,9 @@ test('A: cardio add-on → live panel in the card → chart → Log ride pre-fil
   assert.equal(store.activeSession(), null);
 });
 
-test('B: simulator, Pure Cardio → full-screen view, dropout → reconnects, ride kept', async () => {
+test('B: simulator, Pure Cardio → full-screen view, heart rate, dropout → reconnects, ride kept', async () => {
   Object.assign(bike.timing, { simTickMs: 15, retryMs: 40, quietMs: 1000 });
+  Object.assign(hr.hrTiming, { simTickMs: 15, retryMs: 40, staleMs: 1000 });
   await store.setSetting('bikeSim', true);
   await click('Begin next session');
   await click('Pure Cardio');
@@ -138,6 +146,17 @@ test('B: simulator, Pure Cardio → full-screen view, dropout → reconnects, ri
   const before = bike.bikeRide()?.ride.summary().timeSec || 0;
   assert.ok(before > 5, `time is counting (${before})`);
 
+  await click('Connect heart rate');
+  await tick(200);
+  assert.equal(hr.hrLink()?.status, 'connected');
+  assert.ok(Number(live('hr')) > 80, `heart rate shown (${live('hr')})`);
+  assert.equal(store.state.settings.hrDevice?.name, 'HR-SIM', 'remembered for next time');
+  assert.ok(hr.hrAuto(), 'connects on its own next ride');
+  await click('Simulate HR dropout');
+  assert.equal(hr.hrLink()?.status, 'reconnecting');
+  await tick(300);
+  assert.equal(hr.hrLink()?.status, 'connected', 'heart rate reconnected by itself');
+
   await click('Simulate dropout');
   assert.equal(bike.bikeRide()?.status, 'reconnecting');
   assert.ok(has('reconnecting'));
@@ -149,12 +168,17 @@ test('B: simulator, Pure Cardio → full-screen view, dropout → reconnects, ri
 
   await click('Stop ride');
   await tick(50);
+  assert.equal(hr.hrLink(), null, 'heart rate stopped with the ride');
   assert.ok(has('Ride done'));
+  assert.ok(has('Time in heart-rate zones'), 'zones');
+  assert.ok(has('Heart rate (avg'), 'heart-rate chart');
   await click('Log this ride');
   await click('Save set');
   await tick(40);
   const it = store.activeSession().sections.flatMap((x) => x.items).find((i) => i.id === 'bike1');
   assert.equal(it.sets.length, 1);
+  assert.ok(it.ride.avgHr > 80 && it.ride.maxHr >= it.ride.avgHr, 'heart rate saved with the ride');
+  assert.ok(it.ride.zones.reduce((a, b) => a + b, 0) > 0);
   assert.ok(it.sets[0].timeSec >= after);
   assert.ok(it.ride.maxWatts > 0);
 });

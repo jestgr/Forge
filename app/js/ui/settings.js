@@ -230,7 +230,16 @@ export function render(root) {
         h('h3', null, 'Echelon bike'),
         h('p', { class: 'muted small' }, 'Bike exercises (Stationary Bike, or any exercise tagged “Echelon bike” in the library) get a Connect button. Close the Echelon app first: the bike takes one connection at a time.'),
         h('button', { class: 'chip', 'aria-pressed': String(!!state.settings.bikeSim), onclick: () => store.setSetting('bikeSim', !state.settings.bikeSim) }, 'Bike simulator'),
-        h('p', { class: 'faint small' }, 'The simulator makes up a ride so you can try the bike screens without the bike (also in the browser).')),
+        h('p', { class: 'faint small' }, 'The simulator makes up a ride so you can try the bike screens without the bike (also in the browser).'),
+        h('span', { class: 'tiny faint' }, 'Heart rate on rides'),
+        state.settings.hrDevice
+          ? h('div', { class: 'stack', style: { gap: '8px' } },
+            h('p', { class: 'muted small' }, `Remembered: ${state.settings.hrDevice.name || 'heart-rate device'}.`),
+            h('div', { class: 'grid-2' },
+              h('button', { class: 'chip', 'aria-pressed': String(state.settings.hrAuto !== false), onclick: () => store.setSetting('hrAuto', state.settings.hrAuto === false) }, 'Connect on its own'),
+              h('button', { class: 'btn btn-sm', onclick: () => store.setSetting('hrDevice', null) }, 'Forget device')))
+          : h('p', { class: 'muted small' }, 'During a ride, tap “Connect heart rate”. On the Garmin, turn on Broadcast Heart Rate first (controls menu, or Settings → Wrist Heart Rate). Forge remembers the watch for the next ride.'),
+        h('p', { class: 'faint small' }, `Heart-rate zones use max heart rate ${Math.round(hc.currentThreshold().max)} (change it under Health Connect → Max heart rate).`)),
       h('div', { class: 'card stack' },
         h('h3', null, 'Training plan'),
         h('p', { class: 'muted small' }, plan ? `${plan.name} — ${wk ? `week ${wk.index + 1} of ${wk.total}: ${wk.week.focus}` : 'finished'}` : 'No plan active.'),

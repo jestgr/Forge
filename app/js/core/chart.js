@@ -108,3 +108,69 @@ export function pointAt(pts, t) {
   for (const p of pts) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
   return { ...best, label: mmss(best.t) };
 }
+
+export const RESIST_COLOR = '#a77bea';
+export const HR_COLOR = '#e0453a';
+/** Live chart time range: 15 minutes (Jeff). */
+export const LIVE_WINDOW = 900;
+
+/** First second shown in the live chart whose right edge is `end` (fills from the left until 15 min). */
+export const liveStart = (/** @type {number} */ end, win = LIVE_WINDOW) => Math.max(0, end - win);
+
+/** Plot area of the live chart (right margin holds the resistance axis). */
+export const liveBox = (/** @type {number} */ width, /** @type {number} */ height) => ({ left: 36, right: width - 26, top: 8, bottom: height - 20 });
+
+/**
+ * Live chart during the ride: watts line (left axis) and resistance steps (right axis, 0–32) for the
+ * `win` seconds ending at `end` (ride seconds). Two units → two lines with their own colour-matched axis.
+ * @param {Point[]} pts @param {{ end: number, win?: number, width?: number, height?: number }} o
+ */
+export function liveSvg(pts, { end, win = LIVE_WINDOW, width = 340, height = 150 }) {
+  const b = liveBox(width, height);
+  const t0 = liveStart(end, win);
+  const t1 = t0 + win;
+  const vis = pts.filter((p) => p.t >= t0 - 1 && p.t <= t1 + 1);
+  const yMax = niceMax(Math.max(0, ...vis.map((p) => p.watts)));
+  const x = (/** @type {number} */ t) => b.left + ((t - t0) / win) * (b.right - b.left);
+  const sy = (/** @type {number} */ v) => b.bottom - (v / yMax) * (b.bottom - b.top);
+  const ry = (/** @type {number} */ v) => b.bottom - (v / 32) * (b.bottom - b.top);
+  let steps = '';
+  let prev = -Infinity;
+  for (const p of vis) {
+    if (p.resistance == null) { prev = -Infinity; continue; }
+    steps += p.t - prev > 3 ? `M${x(p.t).toFixed(1)},${ry(p.resistance).toFixed(1)}` : `H${x(p.t).toFixed(1)}V${ry(p.resistance).toFixed(1)}`;
+    prev = p.t;
+  }
+  const ticks = [];
+  for (let t = Math.ceil(t0 / 300) * 300; t <= t1; t += 300) ticks.push(t);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-label="Watts and resistance, last 15 minutes">`
+    + `<defs><clipPath id="lc"><rect x="${b.left}" y="0" width="${b.right - b.left}" height="${height}"/></clipPath></defs>`
+    + [0, yMax / 2, yMax].map((v) => `<line x1="${b.left}" x2="${b.right}" y1="${sy(v)}" y2="${sy(v)}" stroke="${GRID}" stroke-width="1"/>`
+      + `<text x="${b.left - 6}" y="${sy(v) + 4}" fill="${WATTS_COLOR}" font-size="11" text-anchor="end">${Math.round(v)}</text>`).join('')
+    + [0, 16, 32].map((v) => `<text x="${b.right + 4}" y="${ry(v) + 4}" fill="${RESIST_COLOR}" font-size="11">${v}</text>`).join('')
+    + ticks.map((t) => `<text x="${x(t)}" y="${height - 4}" fill="${INK}" font-size="11" text-anchor="middle">${Math.round(t / 60)} min</text>`).join('')
+    + `<g clip-path="url(#lc)"><path d="${steps}" fill="none" stroke="${RESIST_COLOR}" stroke-width="2" stroke-linejoin="round" opacity=".9"/>`
+    + `<path d="${path(vis, (p) => p.watts, x, sy)}" fill="none" stroke="${WATTS_COLOR}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></g>`
+    + '</svg>';
+}
+
+/**
+ * Heart rate over the whole ride, with the zone boundaries as faint lines (end-of-ride chart).
+ * @param {Point[]} pts @param {{ maxHr?: number|null, width?: number, height?: number }} o
+ */
+export function hrSvg(pts, { maxHr, width = 340, height = 120 }) {
+  const b = plotBox(width, height);
+  const tMax = span(pts);
+  const withHr = pts.filter((p) => p.hr);
+  const lo = Math.max(0, Math.floor((Math.min(...withHr.map((p) => /** @type {number} */ (p.hr))) - 10) / 10) * 10);
+  const hi = Math.ceil((Math.max(...withHr.map((p) => /** @type {number} */ (p.hr))) + 10) / 10) * 10;
+  const x = (/** @type {number} */ t) => b.left + (t / tMax) * (b.right - b.left);
+  const sy = (/** @type {number} */ v) => b.bottom - ((v - lo) / (hi - lo)) * (b.bottom - b.top);
+  const zoneLines = maxHr ? [0.5, 0.6, 0.7, 0.8, 0.9].map((f) => f * maxHr).filter((v) => v > lo && v < hi) : [];
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-label="Heart rate over time">`
+    + [lo, hi].map((v) => `<text x="${b.left - 6}" y="${sy(v) + 4}" fill="${INK}" font-size="11" text-anchor="end">${v}</text>`).join('')
+    + zoneLines.map((v) => `<line x1="${b.left}" x2="${b.right}" y1="${sy(v)}" y2="${sy(v)}" stroke="${GRID}" stroke-width="1" stroke-dasharray="3 3"/>`).join('')
+    + timeTicks(tMax).map(({ t, label }) => `<text x="${x(t)}" y="${height - 4}" fill="${INK}" font-size="11" text-anchor="${t === 0 ? 'start' : 'middle'}">${label}</text>`).join('')
+    + `<path d="${path(withHr, (p) => /** @type {number} */ (p.hr), x, sy)}" fill="none" stroke="${HR_COLOR}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+    + '</svg>';
+}

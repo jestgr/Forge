@@ -305,3 +305,15 @@ textarea.input { min-height: 96px; resize: vertical; }
 .ride-chart svg { display: block; }
 .ride-cross { position: absolute; top: 8px; bottom: 20px; width: 1px; background: var(--muted); pointer-events: none; }
 .ride-tip { position: absolute; top: -6px; transform: translate(-50%, -100%); background: var(--surface-3); color: var(--text); font-size: 12px; padding: 4px 8px; border-radius: 6px; white-space: nowrap; pointer-events: none; }
+/* Bike ride: heart rate, zones, splits */
+.bike-bigs .bike-num { font-size: 28px; }
+.ride-bigs.four { grid-template-columns: repeat(4, 1fr); }
+.ride-full .ride-bigs.four .bike-num { font-size: clamp(34px, 10vw, 88px); }
+.zone-row { display: grid; grid-template-columns: 7.5em 1fr 3.2em 4.6em; gap: 8px; align-items: center; }
+.zone-bar { height: 10px; border-radius: 5px; background: var(--surface-3); overflow: hidden; display: block; }
+.zone-bar span { display: block; height: 100%; }
+.zone-time { text-align: right; }
+.splits { width: 100%; border-collapse: collapse; }
+.splits th { text-align: left; font-weight: 600; color: var(--muted); font-size: 11px; }
+.splits td, .splits th { padding: 3px 4px; border-bottom: 1px solid var(--surface-3); }
+[hidden] { display: none !important; }

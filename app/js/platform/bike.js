@@ -25,7 +25,7 @@ const ONE_CONNECTION = 'If the Echelon app is open on any phone or tablet, close
 /**
  * @typedef {{ itemId: string, status: 'scanning'|'connecting'|'connected'|'reconnecting'|'failed',
  *   name?: string, error?: string, lostAt?: number|null, ride: ReturnType<typeof createRide>,
- *   startedAt: number, lastDataAt: number, sim: boolean }} BikeRide
+ *   startedAt: number, lastDataAt: number, sim: boolean, maxHr: number }} BikeRide
  */
 /** @type {BikeRide|null} */
 let current = null;
@@ -65,7 +65,8 @@ export async function startRide(itemId) {
   const p = bike();
   if (!p) throw new Error('The bike connection needs the Forge Android app (or turn on Bike simulator in Settings).');
   if (current) await cancelRide();
-  const ride = /** @type {BikeRide} */ ({ itemId, status: 'scanning', ride: createRide({ maxHr: maxHr() }), startedAt: Date.now(), lastDataAt: Date.now(), sim: simOn() });
+  const mh = maxHr();
+  const ride = /** @type {BikeRide} */ ({ itemId, status: 'scanning', maxHr: mh, ride: createRide({ maxHr: mh }), startedAt: Date.now(), lastDataAt: Date.now(), sim: simOn() });
   current = ride;
   keepAwake('bike');
   changed();
