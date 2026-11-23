@@ -39,13 +39,12 @@ function intervalsFor(/** @type {string} */ itemId) {
     if (engine?.iv.finished && engine.iv.position().done) toast('4×4 complete — counts toward HIIT. Keep riding or stop.', 5000);
     engine?.iv.dispose(); engine = null; return null;
   }
-  if (engine?.key !== cfg.run.startedAt) {
-    engine?.iv.dispose();
-    const iv = createIntervals(cfg);
-    engine = { key: cfg.run.startedAt, iv };
-    iv.start();
-  }
-  return engine.iv;
+  if (engine?.key === cfg.run.startedAt) return engine.iv;
+  engine?.iv.dispose();
+  const iv = createIntervals(cfg);
+  engine = { key: cfg.run.startedAt, iv };
+  iv.start(); // may finish at once (time already up) and re-render, which drops `engine`
+  return iv;
 }
 const dropEngine = () => { engine?.iv.dispose(); engine = null; };
 

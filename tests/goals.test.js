@@ -52,6 +52,12 @@ test('completed 4×4 earns HIIT and Zone 2; unfinished earns neither', () => {
   assert.equal(half.zone2, false);
 });
 
+test('4×4 as a cardio add-on to a resistance session earns HIIT too (with Heavy, the split and Zone 2)', () => {
+  const p = { kind: '4x4', startedAt: 0, completedAt: 28 * 60000, endedAt: null, hardDone: 4 };
+  const c = computeCredit(session('lower', [res(item(), item()), cardio(item(0, { protocol: p }))]));
+  assert.deepEqual(c, { heavy: true, split: 'lower', hiit: true, zone2: true });
+});
+
 test('one session can earn several goals', () => {
   const c = computeCredit(session('back-biceps', [res(item(), item()), cardio(item(0, { sets: [{ at: 1, timeSec: 1500 }] }))]));
   assert.deepEqual(c, { heavy: true, split: 'back-biceps', hiit: false, zone2: true });

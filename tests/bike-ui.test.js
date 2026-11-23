@@ -222,3 +222,46 @@ test('C: 4×4 on the bike → one combined screen, hard intervals tagged, per-in
   assert.ok(!saved.protocol.completedAt && !saved.protocol.endedAt, '4×4 keeps running after the ride stops');
   assert.ok(has('4×4 running — open'));
 });
+
+test('D: Lower Body + cardio add-on, 4×4 on the bike completed → session earns Heavy, Lower, Zone 2 and HIIT', async () => {
+  const old = store.activeSession();
+  if (old) await store.deleteSession(old.id);
+  location.hash = '#/';
+  await tick(50);
+  await click('Begin next session');
+  await click('Lower Body');
+  await click('Yes');
+  await click('Build workout');
+  await addBike();
+  await click('Connect Echelon bike');
+  await tick(200);
+  assert.ok(!has('Echelon ride'), 'add-on: small panel, no full screen yet');
+  await click('Begin 4×4 protocol');
+  await tick(50);
+  assert.ok(has('4×4 ride'), 'add-on + 4×4 → combined screen');
+
+  // Fast-forward past the end of the 4×4 (28 min): the ride screen completes it.
+  const s = structuredClone(store.activeSession());
+  s.sections.flatMap((x) => x.items).find((i) => i.id === 'bike1').protocol.startedAt = Date.now() - 1690_000;
+  // Two resistance exercises with a logged set (Heavy needs 2).
+  for (const it of s.sections.find((x) => x.category === 'resistance').items.slice(0, 2)) it.sets.push({ at: Date.now(), reps: 10, weight: 50 });
+  await store.saveSession(s);
+  (await import('../app/js/ui/dom.js')).refreshSheets();
+  await tick(400);
+  const bk = store.activeSession().sections.flatMap((x) => x.items).find((i) => i.id === 'bike1');
+  assert.ok(bk.protocol.completedAt, '4×4 completed from the ride screen');
+  assert.ok(bike.bikeRide(), 'ride keeps going after the 4×4');
+
+  await click('Stop ride');
+  await tick(50);
+  await click('Log this ride');
+  await click('Save set');
+  await tick(40);
+  const credit = computeCredit(store.activeSession());
+  assert.deepEqual(credit, { heavy: true, split: 'lower', hiit: true, zone2: true });
+  await click('Finish session');
+  assert.ok(has('HIIT'), 'finish screen shows HIIT');
+  await click('Save session');
+  await tick(40);
+  assert.equal(store.activeSession(), null);
+});
