@@ -205,3 +205,6 @@
   Rollback: `git revert 59b4e70`
 - 2026-11-12: pushed `task/echelon-bike-connection` (Jeff's OK); Android run 43220192459 → APK on release `android-preview` (commit `0ca081d`). Rollback: re-run the workflow on `rework` to restore the previous preview APK.
 - 2026-11-12: `docs/PASSDOWN.md` — state of the Echelon work and how to pick it up. Rollback: git revert <this commit>
+- 2026-11-23 (task/improve-bike-connection) `6dc916f` Core: heart-rate decoding + zones, best 1/5/20-min watts, 5-min splits, work (kJ). forge-v21. Rollback: `git revert 6dc916f`
+- 2026-11-23 `7bf9783` Live heart rate: Android `HeartRate` plugin (Garmin "Broadcast Heart Rate" / chest strap), remembered device, auto-connect, retry; HR simulator. Rollback: `git revert 7bf9783`
+- 2026-11-23 `f01f239` Ride screens: heart rate + zone, live averages, 15-min live chart (watts + resistance; drag back in time); Ride done: HR chart, time in zones, best efforts vs all-time, 5-min splits, work; Settings → heart-rate device. Rollback: `git revert f01f239`

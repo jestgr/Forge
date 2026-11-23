@@ -1,6 +1,6 @@
 # Passdown — Forge
 
-Last updated: 2026-11-12. Read this first when picking Forge up again; then `TASK.md`, `docs/DECISIONS.md` (D49–D57).
+Last updated: 2026-11-23 (heart rate + metrics on branch `task/improve-bike-connection`, see TASK.md, D58–D61). Read this first when picking Forge up again; then `TASK.md`, `docs/DECISIONS.md` (D49–D57).
 
 ## Where things stand
 - **Echelon bike connection** is built on branch `task/echelon-bike-connection` (pushed; based on `main`, not `rework`).

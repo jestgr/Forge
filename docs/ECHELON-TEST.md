@@ -43,3 +43,17 @@ If something is clearly off, take a screenshot of Forge and a photo of the conso
 - Bike asleep? Pedal, then tap Reconnect.
 - Still nothing: note what the status line says. (Some newer Echelon firmware locks the data to the Echelon app;
   a 4-year-old EX-3 most likely isn't affected.)
+
+## 7. Heart rate, live chart, new metrics (forge-v21)
+- [ ] On the Garmin, turn on **Broadcast Heart Rate** (controls menu, or Settings → Wrist Heart Rate).
+- [ ] Start a ride → tap **Connect heart rate** → within ~15 s: "Heart rate", the watch's name, red **bpm** + zone.
+- [ ] bpm on Forge ≈ bpm on the watch. Zone colour changes as you work harder.
+- [ ] Next ride: heart rate connects **on its own** (Settings → Echelon bike shows the remembered watch).
+- [ ] Turn broadcast off for ~10 s → "Heart rate lost — reconnecting…", then back by itself.
+- [ ] Live row: **W avg / W max / rpm avg** update.
+- [ ] Live chart: orange watts, purple resistance steps, last 15 minutes. **Drag it right** → it shows earlier
+      minutes and stops moving, with the values under your finger; **Live ▸** jumps back.
+- [ ] Ride 20+ min, stop → **Ride done**: heart-rate chart, **time in zones**, **best efforts** (1/5/20 min;
+      second ride shows "best ever" / "New best"), **splits** every 5 min, **work (kJ)**.
+If heart rate never shows up: the watch may only broadcast over ANT+ (phones can't hear that) — tell me the
+watch model + firmware and what the status line said.
