@@ -3,7 +3,7 @@
 // A new version installs in the background and waits until the app says
 // "reload" (update banner), so a running workout is never interrupted.
 // Bump CACHE on every deployable change (must equal VERSION in js/version.js).
-const CACHE = 'forge-v20';
+const CACHE = 'forge-v21';
 
 // Every file in app/ except this one (a test checks the list is complete).
 const ASSETS = [
@@ -27,6 +27,7 @@ const ASSETS = [
   './js/core/goals.js',
   './js/core/share.js',
   './js/core/bike.js',
+  './js/core/hr.js',
   './js/platform/bike.js',
   './js/platform/bikesim.js',
   './js/core/chart.js',

@@ -6,6 +6,7 @@
 //    (qdomyos-zwift, echelon BLE projects). Packet: F0 <cmd> <len> <payload…> <checksum = sum of all bytes & 0xFF>.
 //    0xD1 = workout data, 0xD2 = resistance. Must be checked on Jeff's bike (see TASK.md).
 //  - Bluetooth SIG Fitness Machine Service (FTMS), characteristic Indoor Bike Data 0x2AD2 (newer bikes / firmware).
+import { timeInZones } from './hr.js';
 
 export const ECHELON = {
   service: '0bf669f1-45f2-11e7-9598-0800200c9a66',
@@ -107,12 +108,15 @@ const MAX_GAP_SEC = 5;
 
 /** @typedef {BikeReading & { at: number }} Sample */
 
+/** Readings that only update the current state (they come separately from the bike's ride data). */
+const STATE_ONLY = new Set(['resistance', 'hr']);
+
 /**
  * Collects readings during a ride. Echelon sends resistance separately, so the latest value is carried
  * into the following data samples. Power: the bike's own if it sends one, else estimated (estWatts).
  * Averages leave out stopped moments (cadence 0).
  */
-export function createRide() {
+export function createRide({ maxHr = 0 } = {}) {
   /** @type {Sample[]} */
   const samples = [];
   /** @type {BikeReading} */
@@ -124,12 +128,13 @@ export function createRide() {
       if (r.powerW != null) measuredPower = true;
       last = { ...last, ...r };
       if (!measuredPower) last.powerW = estWatts(last.cadence, last.resistance);
-      // A resistance-only packet just updates the state; samples are taken on ride data, so nothing counts twice.
-      if (Object.keys(r).some((k) => k !== 'resistance')) samples.push({ ...last, at });
+      // Resistance and heart rate arrive on their own and just update the state; samples are taken on ride data,
+      // so nothing counts twice.
+      if (Object.keys(r).some((k) => !STATE_ONLY.has(k))) samples.push({ ...last, at });
       return last;
     },
     latest: () => last,
-    summary: () => summarise(samples),
+    summary: () => summarise(samples, { maxHr }),
     series: () => perSecond(samples),
     samples: () => samples,
   };
@@ -167,7 +172,7 @@ export function kcalFrom(samples) {
  * One point per second since the first sample (last reading in that second). Seconds without data
  * (e.g. while disconnected) are left out, so the chart shows a gap.
  * @param {Sample[]} samples
- * @returns {{ t: number, cadence: number, watts: number, resistance: number|null }[]}
+ * @returns {{ t: number, cadence: number, watts: number, resistance: number|null, hr: number|null }[]}
  */
 export function perSecond(samples) {
   if (!samples.length) return [];
@@ -176,14 +181,70 @@ export function perSecond(samples) {
   const by = new Map();
   for (const x of samples) by.set(Math.round((x.at - t0) / 1000), x);
   return [...by.entries()].sort((a, b) => a[0] - b[0])
-    .map(([t, x]) => ({ t, cadence: x.cadence ?? 0, watts: x.powerW ?? 0, resistance: x.resistance ?? null }));
+    .map(([t, x]) => ({ t, cadence: x.cadence ?? 0, watts: x.powerW ?? 0, resistance: x.resistance ?? null, hr: x.hr ?? null }));
+}
+
+/** Best-effort windows: 1, 5 and 20 minutes. */
+export const BEST_WINDOWS = [60, 300, 1200];
+
+/**
+ * Highest average watts over any `sec` seconds in a row (seconds without data count as 0 W). Null when the
+ * ride is shorter than the window.
+ * @param {{ t: number, watts: number }[]} pts @param {number} sec
+ */
+export function bestPower(pts, sec) {
+  if (!pts.length) return null;
+  const tMax = pts[pts.length - 1].t;
+  if (tMax + 1 < sec) return null;
+  const w = new Array(tMax + 1).fill(0);
+  for (const p of pts) w[p.t] = p.watts;
+  let sum = 0;
+  let best = 0;
+  for (let t = 0; t <= tMax; t++) {
+    sum += w[t];
+    if (t >= sec) sum -= w[t - sec];
+    if (t >= sec - 1) best = Math.max(best, sum);
+  }
+  return Math.round(best / sec);
+}
+
+/**
+ * Averages per block of `sec` seconds (default 5 minutes). Watts / rpm / resistance leave out stopped seconds,
+ * like the summary; the last block can be shorter.
+ * @param {{ t: number, watts: number, cadence: number, resistance: number|null, hr: number|null }[]} pts
+ * @param {number} [sec]
+ */
+export function splits(pts, sec = 300) {
+  /** @type {Map<number, typeof pts>} */
+  const by = new Map();
+  for (const p of pts) {
+    const k = Math.floor(p.t / sec);
+    if (!by.has(k)) by.set(k, []);
+    /** @type {typeof pts} */ (by.get(k)).push(p);
+  }
+  const mean = (/** @type {number[]} */ xs, d = 0) => (xs.length ? round(xs.reduce((a, b) => a + b, 0) / xs.length, d) : null);
+  return [...by.entries()].sort((a, b) => a[0] - b[0]).map(([k, part]) => {
+    const moving = part.filter((p) => p.cadence > 0);
+    return {
+      from: k * sec,
+      to: Math.min((k + 1) * sec, part[part.length - 1].t + 1),
+      avgWatts: mean(moving.map((p) => p.watts)),
+      avgCadence: mean(moving.map((p) => p.cadence)),
+      avgResistance: mean(/** @type {number[]} */ (moving.map((p) => p.resistance).filter((v) => v != null)), 1),
+      avgHr: mean(/** @type {number[]} */ (part.map((p) => p.hr).filter((v) => v != null))),
+    };
+  });
 }
 
 /**
  * @param {Sample[]} samples
+ * @param {{ maxHr?: number }} [o] maxHr → time in heart-rate zones
  */
-export function summarise(samples) {
+export function summarise(samples, { maxHr = 0 } = {}) {
   const moving = samples.filter((s) => (s.cadence ?? 0) > 0);
+  const pts = perSecond(samples);
+  // Heart rate also counts while stopped (it's still the body working).
+  const allHr = /** @type {number[]} */ (samples.map((s) => s.hr).filter((v) => typeof v === 'number' && v > 0));
   const pick = (/** @type {keyof BikeReading} */ k) => moving.map((s) => s[k]).filter((v) => typeof v === 'number');
   const elapsed = gained(samples, 'elapsedSec');
   const timeSec = elapsed ?? (samples.length ? Math.round((samples[samples.length - 1].at - samples[0].at) / 1000) : 0);
@@ -204,7 +265,13 @@ export function summarise(samples) {
     avgWatts: n(avg(pick('powerW'))),
     maxWatts: max(pick('powerW')),
     kcal: samples.length > 1 ? Math.round(kcalFrom(samples)) : null,
-    avgHr: n(avg(pick('hr'))),
+    workKj: samples.length > 1 ? Math.round(kcalFrom(samples)) : null,
+    avgHr: n(avg(allHr)),
+    maxHr: max(allHr),
+    best: Object.fromEntries(BEST_WINDOWS.map((w) => [w, bestPower(pts, w)])),
+    zones: maxHr && allHr.length ? timeInZones(pts, maxHr) : null,
+    zoneMaxHr: maxHr && allHr.length ? maxHr : null,
+    splits: splits(pts),
   };
 }
 

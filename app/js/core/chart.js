@@ -7,7 +7,7 @@ export const CADENCE_COLOR = '#3a8ee6';
 const GRID = '#2f3a48';
 const INK = '#9aa7b6';
 
-/** @typedef {{ t: number, cadence: number, watts: number, resistance: number|null }} Point */
+/** @typedef {{ t: number, cadence: number, watts: number, resistance: number|null, hr?: number|null }} Point */
 
 /** A round axis maximum ≥ v (10, 20, 25, 50, 100, 150, 200, 250, 300, 400, 500 …). @param {number} v */
 export function niceMax(v) {
