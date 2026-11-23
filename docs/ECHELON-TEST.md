@@ -57,3 +57,11 @@ If something is clearly off, take a screenshot of Forge and a photo of the conso
       second ride shows "best ever" / "New best"), **splits** every 5 min, **work (kJ)**.
 If heart rate never shows up: the watch may only broadcast over ANT+ (phones can't hear that) — tell me the
 watch model + firmware and what the status line said.
+
+## 8. 4×4 on the bike (forge-v22)
+- [ ] Pure Cardio → Connect Echelon bike → (heart rate connects) → back arrow → **Begin 4×4 protocol** on the same bike.
+      The ride screen now shows the 4×4 countdown on top (orange = hard, other colour = rest), beeps as usual.
+- [ ] During hard intervals: "Target …–… bpm" with **in target ✓ / push harder ↑ / ease off ↓**.
+- [ ] Live chart shades hard intervals (H1…H4).
+- [ ] Finish all 4 → "4×4 complete" message; keep riding or Stop ride.
+- [ ] Ride done: **4×4 hard intervals** table (W, rpm, bpm, peak, time in target) and shaded charts. Session counts as HIIT.

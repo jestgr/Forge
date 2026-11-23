@@ -19,6 +19,10 @@ metrics: HR zones, best efforts, live averages, work + splits.
 - [x] Pushed; run #14 built `debug-14` (Obtainium).
 - [ ] Jeff: install via Obtainium, then try §7 on the bike.
 
+## Part 2 — 4×4 on the bike (Jeff, 2026-11-23)
+- [x] Combined screen (4×4 countdown in the ride view), HR target during hard, intervals on charts + table (D63). forge-v22.
+- [ ] Jeff: push → Obtainium update → try §8 of `docs/ECHELON-TEST.md`.
+
 ## Progress
 - [x] Core metrics + tests (6dc916f).
 - [x] Heart-rate connection (7bf9783).
