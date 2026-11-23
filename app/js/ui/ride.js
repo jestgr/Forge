@@ -1,12 +1,13 @@
 // Echelon bike screens: the small live panel inside a cardio card (cardio add-on), the full-screen ride view
 // (Pure Cardio), and the end-of-ride chart. Live numbers update in place (elements with class bk-<key>) instead
 // of re-rendering the page every second. Saving is done by session.js through the callbacks given here.
-import { h, icon, openSheet, confirmSheet, refreshSheets } from './dom.js';
+import { h, icon, openSheet, confirmSheet, refreshSheets, toast } from './dom.js';
 import * as store from '../store.js';
 import { bikeAvailable, bikeRide, onBikeChange, reconnect, simDrop, cancelRide, connectHeartRate } from '../platform/bike.js';
 import { hrAvailable, hrLink, simHrDrop } from '../platform/hr.js';
 import { seriesSvg, plotBox, pointAt, liveSvg, liveBox, liveStart, hrSvg, LIVE_WINDOW, WATTS_COLOR, CADENCE_COLOR, RESIST_COLOR, HR_COLOR } from '../core/chart.js';
-import { hrZone, zoneBounds, ZONE_NAMES, ZONE_COLORS } from '../core/hr.js';
+import { hrZone, zoneBounds, ZONE_NAMES, ZONE_COLORS, hardTarget, vsTarget } from '../core/hr.js';
+import { createIntervals } from './runner.js';
 import { BEST_WINDOWS } from '../core/bike.js';
 import { fmtClock } from '../core/util.js';
 
@@ -22,6 +23,66 @@ export const HR_STATUS = {
   scanning: 'Looking for heart rate…', connecting: 'Connecting heart rate…', connected: 'Heart rate',
   reconnecting: 'Heart rate lost — reconnecting…', failed: 'No heart rate',
 };
+
+/** The 4×4 running on an exercise, as interval-engine settings (set by session.js), or null.
+ * @type {(itemId: string) => any} */
+let intervalSource = () => null;
+/** @param {(itemId: string) => any} fn */
+export function setIntervalSource(fn) { intervalSource = fn; }
+
+/** The interval engine of the combined 4×4 + ride screen (one at a time, kept across re-renders).
+ * @type {{ key: number, iv: ReturnType<typeof createIntervals> }|null} */
+let engine = null;
+function intervalsFor(/** @type {string} */ itemId) {
+  const cfg = intervalSource(itemId);
+  if (!cfg) {
+    if (engine?.iv.finished && engine.iv.position().done) toast('4×4 complete — counts toward HIIT. Keep riding or stop.', 5000);
+    engine?.iv.dispose(); engine = null; return null;
+  }
+  if (engine?.key !== cfg.run.startedAt) {
+    engine?.iv.dispose();
+    const iv = createIntervals(cfg);
+    engine = { key: cfg.run.startedAt, iv };
+    iv.start();
+  }
+  return engine.iv;
+}
+const dropEngine = () => { engine?.iv.dispose(); engine = null; };
+
+/** In a 4×4 hard interval right now (combined screen)? */
+const inHard = () => !!engine && !engine.iv.finished && engine.iv.position().segment?.type === 'work';
+
+/** Heart-rate target line for hard intervals: text and colour. */
+function targetText() {
+  const r = bikeRide();
+  if (!r || !inHard()) return { text: '', color: '' };
+  const t = hardTarget(r.maxHr);
+  const bpm = r.ride.latest().hr;
+  const range = `Target ${t.from}–${t.to} bpm`;
+  if (!bpm) return { text: range, color: 'var(--muted)' };
+  const v = vsTarget(bpm, r.maxHr);
+  return v === 0 ? { text: `${range} · in target ✓`, color: 'var(--good)' }
+    : v < 0 ? { text: `${range} · push harder ↑`, color: 'var(--accent)' }
+      : { text: `${range} · ease off a little ↓`, color: 'var(--accent)' };
+}
+
+/** The 4×4 countdown on top of the ride screen. @param {ReturnType<typeof createIntervals>} iv */
+function intervalBanner(iv) {
+  const target = h('div', { class: 'ivl-target bk-target' });
+  const banner = h('div', { class: 'ivl' },
+    h('div', { class: 'spread' }, h('span', { class: 'tiny faint' }, '4×4 protocol'), iv.remaining),
+    iv.phase, iv.count, iv.next, iv.dots, target,
+    h('div', { class: 'ivl-controls' }, iv.pauseBtn,
+      h('button', { class: 'btn btn-sm', onclick: iv.skip }, 'Skip ›'),
+      h('button', { class: 'btn btn-sm btn-danger', onclick: () => iv.stop() }, 'Stop 4×4')));
+  iv.onSegment = (seg) => {
+    banner.className = `ivl ${seg.type}`;
+    const t = targetText();
+    target.textContent = t.text;
+    target.style.color = t.color;
+  };
+  return banner;
+}
 
 /** The summary is recomputed only when a new sample arrived (it walks the whole ride). */
 let sumCache = { ride: /** @type {any} */ (null), n: -1, s: /** @type {any} */ (null) };
@@ -67,6 +128,10 @@ onBikeChange(() => {
     for (const el of document.querySelectorAll(`.bk-${k}`)) el.textContent = v;
   }
   for (const el of document.querySelectorAll('.bk-zone')) /** @type {HTMLElement} */ (el).style.color = ZONE_COLORS[liveZone()];
+  if (document.querySelector('.bk-target')) {
+    const t = targetText();
+    for (const el of document.querySelectorAll('.bk-target')) { el.textContent = t.text; /** @type {HTMLElement} */ (el).style.color = t.color; }
+  }
   if (Date.now() - lastChartAt >= 1000) {
     lastChartAt = Date.now();
     for (const el of document.querySelectorAll('.bk-chart')) /** @type {any} */ (el).render?.();
@@ -195,6 +260,7 @@ export function bikePanel(it, o) {
     if (o.full) return h('div', { style: pad }, h('button', { class: 'btn btn-primary btn-block', onclick: () => openRideView(o.stop) }, icon('bolt'), 'Ride running — open'));
     return h('div', { class: 'bike-panel', style: { margin: '0 16px 14px' } },
       statusBlock(),
+      intervalSource(it.id) ? h('button', { class: 'btn btn-primary btn-block', onclick: () => openRideView(o.stop) }, icon('bolt'), '4×4 + ride — open') : null,
       hrBlock(),
       h('div', { class: hrAvailable() ? 'grid-4 bike-bigs' : 'grid-3' }, big('cadence', 'rpm'), big('watts', 'watts (est.)'), big('resistance', 'resistance'), hrAvailable() ? hrBig() : null),
       h('div', { class: 'row-wrap', style: { justifyContent: 'space-between' } }, small('time', ''), small('distance', 'mi'), small('speed', 'mph'), small('kcal', 'kcal')),
@@ -228,17 +294,24 @@ export function rideText(x) {
 }
 
 /** Full-screen ride view (Pure Cardio). Minimise keeps riding. @param {() => void} stop */
+let rideViewOpen = false;
 export function openRideView(stop) {
+  if (rideViewOpen) { refreshSheets(); return; } // already showing (e.g. 4×4 started from the card underneath)
+  rideViewOpen = true;
   openSheet((close) => {
     const r = bikeRide();
     if (!r) { setTimeout(close); return h('div'); }
+    const iv = intervalsFor(r.itemId);
+    const ivOn = iv && !iv.finished;
     return h('div', { class: 'ride-full' },
-      h('div', { class: 'spread' }, h('h2', null, 'Echelon ride'),
+      h('div', { class: 'spread' }, h('h2', null, ivOn ? '4×4 ride' : 'Echelon ride'),
         h('button', { class: 'icon-btn sm', 'aria-label': 'Minimise', onclick: close }, icon('back'))),
       statusBlock(),
       hrBlock(),
+      ivOn ? intervalBanner(iv) : null,
       h('div', { class: 'ride-live' },
-        h('div', { class: 'ride-time mono bk-time' }, liveText().time),
+        ivOn ? h('div', { class: 'center' }, h('span', { class: 'mono bike-small bk-time' }, liveText().time), h('span', { class: 'tiny faint' }, ' ride time'))
+          : h('div', { class: 'ride-time mono bk-time' }, liveText().time),
         h('div', { class: 'ride-bigs' + (hrAvailable() ? ' four' : '') }, big('cadence', 'rpm'), big('watts', 'watts (est.)'), big('resistance', 'resistance'), hrAvailable() ? hrBig() : null),
         h('div', { class: 'grid-3' }, small('distance', 'mi'), small('speed', 'mph'), small('kcal', 'kcal')),
         averages(),
@@ -249,7 +322,7 @@ export function openRideView(stop) {
         h('button', { class: 'btn btn-danger btn-block', onclick: async () => {
           if (await confirmSheet('Cancel the ride?', 'Nothing from the bike is saved.', { ok: 'Cancel ride', cancel: 'Keep riding', danger: true })) { close(); await cancelRide(); }
         } }, 'Cancel ride')));
-  }, { full: true, label: 'Echelon ride' });
+  }, { full: true, label: 'Echelon ride', onClose: () => { rideViewOpen = false; dropEngine(); } });
 }
 
 /**
@@ -334,13 +407,27 @@ function zoneBlock(sum) {
       h('span', { class: 'faint tiny zone-range' }, z ? `${bounds[z - 1].from}${bounds[z - 1].to ? `–${bounds[z - 1].to}` : '+'}` : ''))));
 }
 
+/** 4×4 hard intervals: one row each. @param {RideSummary} sum */
+function intervalsBlock(sum) {
+  if (!sum.intervals?.length) return null;
+  const t = sum.zoneMaxHr ? hardTarget(sum.zoneMaxHr) : null;
+  return h('div', { class: 'stack', style: { gap: '2px' } },
+    h('span', { class: 'tiny faint' }, `4×4 hard intervals${t ? ` (target ${t.from}–${t.to} bpm)` : ''}`),
+    h('table', { class: 'ride-table small' },
+      h('tr', null, ...['hard', 'W', 'rpm', 'bpm', 'peak', t ? 'in target' : null].filter((x) => x != null).map((x) => h('th', null, x))),
+      ...sum.intervals.map((x) => h('tr', null,
+        h('td', null, `#${x.n}`), h('td', { class: 'mono' }, x.avgWatts ?? '–'), h('td', { class: 'mono' }, x.avgCadence ?? '–'),
+        h('td', { class: 'mono' }, x.avgHr ?? '–'), h('td', { class: 'mono' }, x.maxHr ?? '–'),
+        t ? h('td', { class: 'mono' }, x.inTargetSec != null ? `${fmtClock(x.inTargetSec)} / ${fmtClock(x.sec)}` : '–') : null))));
+}
+
 /** Per-5-minute splits. @param {RideSummary} sum */
 function splitsBlock(sum) {
   if (!sum.splits || sum.splits.length < 2) return null;
   const m = (/** @type {number} */ s) => Math.round(s / 60);
   return h('div', { class: 'stack', style: { gap: '2px' } },
     h('span', { class: 'tiny faint' }, 'Splits (5 min)'),
-    h('table', { class: 'splits small' },
+    h('table', { class: 'ride-table small' },
       h('tr', null, ...['min', 'W', 'rpm', 'res', 'bpm'].map((x) => h('th', null, x))),
       ...sum.splits.map((x) => h('tr', null,
         h('td', null, `${m(x.from)}–${m(x.to)}`), h('td', { class: 'mono' }, x.avgWatts ?? '–'), h('td', { class: 'mono' }, x.avgCadence ?? '–'),
@@ -367,6 +454,7 @@ export function openRideDone(sum, pts, log) {
     pts.length > 1 ? chartBlock(pts, 'watts', 'Watts (estimated)', WATTS_COLOR) : h('p', { class: 'faint small' }, 'Not enough data for a chart.'),
     pts.length > 1 ? chartBlock(pts, 'cadence', 'Cadence (rpm)', CADENCE_COLOR) : null,
     hrChart(sum, pts),
+    intervalsBlock(sum),
     bestBlock(sum),
     zoneBlock(sum),
     splitsBlock(sum),

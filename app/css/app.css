@@ -313,7 +313,23 @@ textarea.input { min-height: 96px; resize: vertical; }
 .zone-bar { height: 10px; border-radius: 5px; background: var(--surface-3); overflow: hidden; display: block; }
 .zone-bar span { display: block; height: 100%; }
 .zone-time { text-align: right; }
-.splits { width: 100%; border-collapse: collapse; }
-.splits th { text-align: left; font-weight: 600; color: var(--muted); font-size: 11px; }
-.splits td, .splits th { padding: 3px 4px; border-bottom: 1px solid var(--surface-3); }
+.ride-table { width: 100%; border-collapse: collapse; }
+.ride-table th { text-align: left; font-weight: 600; color: var(--muted); font-size: 11px; }
+.ride-table td, .ride-table th { padding: 3px 4px; border-bottom: 1px solid var(--surface-3); }
 [hidden] { display: none !important; }
+/* 4×4 on the bike: countdown banner in the ride view */
+.ivl { display: flex; flex-direction: column; gap: 6px; text-align: center; padding: 12px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.ivl .phase { font-size: 22px; font-weight: 900; }
+.ivl .count { font-family: var(--mono); font-weight: 900; font-size: clamp(56px, 20vw, 110px); line-height: 1; font-variant-numeric: tabular-nums; }
+.ivl.work .phase, .ivl.work .count { color: var(--work); }
+.ivl.rest .phase, .ivl.rest .count { color: var(--rest); }
+.ivl .next { color: var(--muted); font-size: 15px; }
+.ivl .dots { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.ivl .dot { width: 22px; height: 8px; border-radius: 4px; background: var(--surface-3); }
+.ivl .dot.done { background: var(--good); }
+.ivl .dot.now { background: var(--text); }
+.ivl-target { font-weight: 800; font-size: 15px; min-height: 1.2em; }
+.ivl-controls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.ivl-controls .btn-big { min-height: 0; padding: 8px; font-size: 14px; }
+.center { text-align: center; }
+.ride-table td { white-space: nowrap; }

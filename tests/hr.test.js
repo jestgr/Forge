@@ -66,3 +66,26 @@ test('ride with heart rate: HR carried into samples, not a sample of its own; zo
   assert.equal(s.splits.length, 1);
   assert.equal(createRide().summary().zones, null);
 });
+
+test('4×4 hard target 85–95 % of max HR', async () => {
+  const { hardTarget, vsTarget } = await import('../app/js/core/hr.js');
+  assert.deepEqual(hardTarget(180), { from: 153, to: 171 });
+  assert.equal(vsTarget(150, 180), -1);
+  assert.equal(vsTarget(160, 180), 0);
+  assert.equal(vsTarget(175, 180), 1);
+});
+
+test('4×4 hard intervals: stats per interval, time in target; bands for the charts', async () => {
+  const { hardIntervals } = await import('../app/js/core/bike.js');
+  const { hardSpans, seriesSvg } = await import('../app/js/core/chart.js');
+  const pts = Array.from({ length: 600 }, (_, t) => ({
+    t, watts: t >= 100 && t < 340 ? 200 : 80, cadence: 85, resistance: 12,
+    hr: t >= 100 && t < 340 ? (t < 160 ? 140 : 160) : 120, hard: t < 100 ? 0 : t < 340 ? 1 : 0,
+  }));
+  const iv = hardIntervals(pts, 180);
+  assert.equal(iv.length, 1);
+  assert.deepEqual(iv[0], { n: 1, from: 100, sec: 240, avgWatts: 200, avgCadence: 85, avgHr: 155, maxHr: 160, inTargetSec: 180 });
+  assert.deepEqual(hardIntervals(pts.map((p) => ({ ...p, hard: null }))), []);
+  assert.deepEqual(hardSpans(pts), [{ n: 1, from: 100, to: 339 }]);
+  assert.match(seriesSvg(pts, { key: 'watts', color: '#000' }), />H1</);
+});

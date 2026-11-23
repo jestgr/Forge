@@ -182,3 +182,43 @@ test('B: simulator, Pure Cardio → full-screen view, heart rate, dropout → re
   assert.ok(it.sets[0].timeSec >= after);
   assert.ok(it.ride.maxWatts > 0);
 });
+
+test('C: 4×4 on the bike → one combined screen, hard intervals tagged, per-interval table at the end', async () => {
+  Object.assign(bike.timing, { simTickMs: 15, retryMs: 40, quietMs: 1000 });
+  const old = store.activeSession();
+  if (old) await store.deleteSession(old.id);
+  location.hash = '#/';
+  await tick(50);
+  await click('Begin next session');
+  await click('Pure Cardio');
+  await click('Build workout');
+  await addBike();
+  await click('Connect Echelon bike');
+  await tick(200);
+  assert.ok(has('Echelon ride'));
+  await click('Begin 4×4 protocol');
+  await tick(50);
+  assert.ok(has('4×4 ride'), 'combined screen');
+  assert.equal(body.querySelectorAll('.ride-full').length, 1, 'no second ride screen');
+  assert.ok(has('Warm-up'), 'countdown in the ride screen');
+  assert.ok(bike.bikeRide()?.ride.samples().slice(-1)[0].hard === 0, 'warm-up tagged 0');
+
+  // Jump into hard interval 1 (warm-up is 3 min): later packets are tagged 1, the screen follows.
+  const s = structuredClone(store.activeSession());
+  s.sections.flatMap((x) => x.items).find((i) => i.id === 'bike1').protocol.startedAt = Date.now() - 200_000;
+  await store.saveSession(s);
+  (await import('../app/js/ui/dom.js')).refreshSheets();
+  await tick(400);
+  assert.ok(has('Hard 1 of 4'), 'in hard 1');
+  assert.ok(has('Target '), 'heart-rate target during hard');
+  const tagged = bike.bikeRide()?.ride.samples().filter((x) => x.hard === 1).length || 0;
+  assert.ok(tagged > 3, `samples tagged hard 1 (${tagged})`);
+
+  await click('Stop ride');
+  await tick(50);
+  assert.ok(has('4×4 hard intervals') && has('#1'), 'per-interval table');
+  const saved = store.activeSession().sections.flatMap((x) => x.items).find((i) => i.id === 'bike1');
+  assert.equal(saved.ride.intervals[0].n, 1);
+  assert.ok(!saved.protocol.completedAt && !saved.protocol.endedAt, '4×4 keeps running after the ride stops');
+  assert.ok(has('4×4 running — open'));
+});

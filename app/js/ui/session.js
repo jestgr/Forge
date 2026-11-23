@@ -12,12 +12,12 @@ import { fmtClock, fmtDate, fmtMinutes, repsNumber, uid, rng } from '../core/uti
 import { openPicker, editExercise, targetText } from './library.js';
 import { openRunner } from './runner.js';
 import { PROTOCOL_4X4, COOLDOWN } from '../core/model.js';
-import { settle } from '../core/timeline.js';
+import { settle, position, runSeconds } from '../core/timeline.js';
 import { unlockAudio } from '../platform/cues.js';
-import { bikeRide, startRide, stopRide, cancelRide } from '../platform/bike.js';
+import { bikeRide, startRide, stopRide, cancelRide, setHardSource } from '../platform/bike.js';
 import { rideValues, isBikeExercise } from '../core/bike.js';
 import { thumbnail } from '../core/chart.js';
-import { bikePanel, openRideView, openRideDone } from './ride.js';
+import { bikePanel, openRideView, openRideDone, setIntervalSource } from './ride.js';
 
 /** @typedef {import('../core/model.js').Session} Session */
 /** @typedef {import('../core/model.js').SessionItem} SessionItem */
@@ -263,16 +263,37 @@ async function begin4x4(itemId) {
   show4x4(itemId);
 }
 
-function show4x4(itemId) {
+/** Interval engine settings for the 4×4 on this exercise (saved on the item), or null if none is running. */
+function protoConfig(itemId) {
   const p = findItem(store.activeSession(), itemId)?.item.protocol;
-  if (!protoRunning(p)) return;
+  if (!protoRunning(p)) return null;
   const patch = (fields) => update((x) => { const q = findItem(x, itemId)?.item.protocol; if (q) Object.assign(q, fields); });
-  openRunner({
+  return {
     title: '4×4 protocol', script: PROTOCOL_4X4,
     run: { startedAt: p.startedAt, pausedMs: p.pausedMs || 0, pausedAt: p.pausedAt ?? null, skipSec: p.skipSec || 0 },
     save: (run) => patch(run),
     onDone: (run) => patch({ ...run, completedAt: settle(PROTOCOL_4X4, run, now()).endAt, hardDone: 4 }),
     onStop: (run, workDone) => patch({ ...run, endedAt: now(), hardDone: workDone }),
+  };
+}
+
+// 4×4 on the bike: the ride view runs the intervals too (one combined screen), and ride data is tagged with the
+// hard interval so charts and the summary can show them.
+setIntervalSource((itemId) => protoConfig(itemId));
+setHardSource((itemId) => {
+  const p = findItem(store.activeSession(), itemId)?.item.protocol;
+  if (!protoRunning(p)) return undefined;
+  const pos = position(PROTOCOL_4X4, runSeconds(p, now()));
+  if (pos.done || !pos.segment) return undefined;
+  return pos.segment.type === 'work' ? pos.workDone + 1 : 0;
+});
+
+function show4x4(itemId) {
+  const cfg = protoConfig(itemId);
+  if (!cfg) return;
+  if (bikeRide()?.itemId === itemId) { openRideView(endRide); return; } // riding this exercise: one combined screen
+  openRunner({
+    ...cfg,
     doneView: (close) => h('div', { class: 'runner rest' },
       h('div', { style: { flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '16px' } },
         h('div', { class: 'phase' }, '4×4 complete'),
@@ -316,7 +337,7 @@ async function beginRide(itemId) {
   const t = now();
   await update((x) => (x.clockStartedAt == null ? clock.start(x, t) : clock.resume(x, t)));
   startRide(itemId).catch((e) => toast(e.message));
-  if (isPureCardio()) openRideView(endRide);
+  if (isPureCardio() || protoRunning(it?.protocol)) openRideView(endRide);
 }
 
 /** Stop the ride, keep it on the exercise, show the chart. */

@@ -37,6 +37,11 @@ let retryTimer = /** @type {any} */ (null);
 let sim = null;
 /** @type {Set<() => void>} */
 const listeners = new Set();
+/** Which 4×4 hard interval is on for this exercise (1–4, 0 between, undefined = no 4×4). Set by session.js.
+ * @type {(itemId: string) => number|undefined} */
+let hardSource = () => undefined;
+/** @param {(itemId: string) => number|undefined} fn */
+export function setHardSource(fn) { hardSource = fn; }
 
 const simOn = () => !!state.settings?.bikeSim;
 /** The plugin in use: simulator when switched on, else the native one (Android app only). */
@@ -75,7 +80,11 @@ export async function startRide(itemId) {
       if (current !== ride) return;
       ride.lastDataAt = Date.now();
       const r = decodeEchelon(Uint8Array.from(e.value));
-      if (r) { ride.ride.add(r, ride.lastDataAt); changed(); }
+      if (!r) return;
+      // Ride data (not resistance-only packets) is tagged with the 4×4 interval; undefined clears an old tag.
+      if (r.cadence != null || r.elapsedSec != null) r.hard = hardSource(ride.itemId);
+      ride.ride.add(r, ride.lastDataAt);
+      changed();
     }),
     p.addListener('state', (/** @type {{ state: string, name?: string, error?: string }} */ e) => {
       if (current !== ride) return;

@@ -6,7 +6,7 @@
 //    (qdomyos-zwift, echelon BLE projects). Packet: F0 <cmd> <len> <payload…> <checksum = sum of all bytes & 0xFF>.
 //    0xD1 = workout data, 0xD2 = resistance. Must be checked on Jeff's bike (see TASK.md).
 //  - Bluetooth SIG Fitness Machine Service (FTMS), characteristic Indoor Bike Data 0x2AD2 (newer bikes / firmware).
-import { timeInZones } from './hr.js';
+import { timeInZones, hardTarget } from './hr.js';
 
 export const ECHELON = {
   service: '0bf669f1-45f2-11e7-9598-0800200c9a66',
@@ -21,7 +21,8 @@ export const FTMS = {
 /**
  * One reading. Only the fields the bike sent are set.
  * @typedef {{ elapsedSec?: number, distanceKm?: number, speedKmh?: number, cadence?: number,
- *   resistance?: number, powerW?: number, hr?: number, kcal?: number }} BikeReading
+ *   resistance?: number, powerW?: number, hr?: number, kcal?: number, hard?: number }} BikeReading
+ * `hard` is set by the app, not the bike: during a 4×4 on this exercise, the hard interval (1–4), or 0 between.
  */
 
 /** Echelon checksum: sum of the bytes, low 8 bits. @param {ArrayLike<number>} bytes */
@@ -172,7 +173,7 @@ export function kcalFrom(samples) {
  * One point per second since the first sample (last reading in that second). Seconds without data
  * (e.g. while disconnected) are left out, so the chart shows a gap.
  * @param {Sample[]} samples
- * @returns {{ t: number, cadence: number, watts: number, resistance: number|null, hr: number|null }[]}
+ * @returns {{ t: number, cadence: number, watts: number, resistance: number|null, hr: number|null, hard: number|null }[]}
  */
 export function perSecond(samples) {
   if (!samples.length) return [];
@@ -181,7 +182,31 @@ export function perSecond(samples) {
   const by = new Map();
   for (const x of samples) by.set(Math.round((x.at - t0) / 1000), x);
   return [...by.entries()].sort((a, b) => a[0] - b[0])
-    .map(([t, x]) => ({ t, cadence: x.cadence ?? 0, watts: x.powerW ?? 0, resistance: x.resistance ?? null, hr: x.hr ?? null }));
+    .map(([t, x]) => ({ t, cadence: x.cadence ?? 0, watts: x.powerW ?? 0, resistance: x.resistance ?? null, hr: x.hr ?? null, hard: x.hard ?? null }));
+}
+
+/**
+ * 4×4 hard intervals during the ride: averages per hard interval, peak heart rate and seconds in the target
+ * (85–95 % of max HR). Empty when no 4×4 ran during the ride.
+ * @param {{ t: number, watts: number, cadence: number, hr: number|null, hard: number|null }[]} pts
+ * @param {number} [maxHr]
+ */
+export function hardIntervals(pts, maxHr = 0) {
+  const t = maxHr ? hardTarget(maxHr) : null;
+  const mean = (/** @type {number[]} */ xs) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
+  const out = [];
+  for (const n of [...new Set(pts.map((p) => p.hard).filter((h) => h && h > 0))].sort()) {
+    const part = pts.filter((p) => p.hard === n);
+    const moving = part.filter((p) => p.cadence > 0);
+    const hrs = /** @type {number[]} */ (part.map((p) => p.hr).filter((v) => v));
+    out.push({
+      n: /** @type {number} */ (n), from: part[0].t, sec: part.length,
+      avgWatts: mean(moving.map((p) => p.watts)), avgCadence: mean(moving.map((p) => p.cadence)),
+      avgHr: mean(hrs), maxHr: hrs.length ? Math.max(...hrs) : null,
+      inTargetSec: t && hrs.length ? part.filter((p) => p.hr && p.hr >= t.from && p.hr <= t.to).length : null,
+    });
+  }
+  return out;
 }
 
 /** Best-effort windows: 1, 5 and 20 minutes. */
@@ -272,6 +297,7 @@ export function summarise(samples, { maxHr = 0 } = {}) {
     zones: maxHr && allHr.length ? timeInZones(pts, maxHr) : null,
     zoneMaxHr: maxHr && allHr.length ? maxHr : null,
     splits: splits(pts),
+    intervals: hardIntervals(pts, maxHr),
   };
 }
 

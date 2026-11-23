@@ -47,3 +47,13 @@ export function timeInZones(pts, maxHr) {
   for (const p of pts) if (p.hr) out[hrZone(p.hr, maxHr)]++;
   return out;
 }
+
+/** 4×4 hard-interval target: 85–95 % of max heart rate. */
+export const HARD_TARGET = [0.85, 0.95];
+/** @param {number} maxHr */
+export const hardTarget = (maxHr) => ({ from: Math.round(HARD_TARGET[0] * maxHr), to: Math.round(HARD_TARGET[1] * maxHr) });
+/** -1 below, 0 in, 1 above the hard target. @param {number} bpm @param {number} maxHr */
+export function vsTarget(bpm, maxHr) {
+  const t = hardTarget(maxHr);
+  return bpm < t.from ? -1 : bpm > t.to ? 1 : 0;
+}

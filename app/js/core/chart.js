@@ -7,7 +7,25 @@ export const CADENCE_COLOR = '#3a8ee6';
 const GRID = '#2f3a48';
 const INK = '#9aa7b6';
 
-/** @typedef {{ t: number, cadence: number, watts: number, resistance: number|null, hr?: number|null }} Point */
+/** @typedef {{ t: number, cadence: number, watts: number, resistance: number|null, hr?: number|null, hard?: number|null }} Point */
+
+/** Stretches of 4×4 hard intervals (consecutive seconds with the same `hard` > 0). @param {Point[]} pts */
+export function hardSpans(pts) {
+  /** @type {{ n: number, from: number, to: number }[]} */
+  const out = [];
+  for (const p of pts) {
+    const last = out[out.length - 1];
+    if (!p.hard) continue;
+    if (last && last.n === p.hard && p.t - last.to <= 3) last.to = p.t;
+    else out.push({ n: p.hard, from: p.t, to: p.t });
+  }
+  return out;
+}
+
+/** Shaded bands + "H1…H4" labels for hard intervals. @param {Point[]} pts @param {(t: number) => number} x @param {{ top: number, bottom: number }} b */
+const hardBands = (pts, x, b) => hardSpans(pts).map(({ n, from, to }) =>
+  `<rect x="${x(from).toFixed(1)}" y="${b.top}" width="${Math.max(1, x(to + 1) - x(from)).toFixed(1)}" height="${b.bottom - b.top}" fill="#ffffff" opacity=".07"/>`
+  + `<text x="${(x(from) + 3).toFixed(1)}" y="${b.top + 11}" fill="${INK}" font-size="10">H${n}</text>`).join('');
 
 /** A round axis maximum ≥ v (10, 20, 25, 50, 100, 150, 200, 250, 300, 400, 500 …). @param {number} v */
 export function niceMax(v) {
@@ -64,6 +82,7 @@ export function seriesSvg(pts, { key, color, width = 340, height = 120 }) {
     + ticks.map((v) => `<line x1="${b.left}" x2="${b.right}" y1="${sy(v)}" y2="${sy(v)}" stroke="${GRID}" stroke-width="1"/>`
       + `<text x="${b.left - 6}" y="${sy(v) + 4}" fill="${INK}" font-size="11" text-anchor="end">${Math.round(v)}</text>`).join('')
     + timeTicks(tMax).map(({ t, label }) => `<text x="${x(t)}" y="${height - 4}" fill="${INK}" font-size="11" text-anchor="${t === 0 ? 'start' : 'middle'}">${label}</text>`).join('')
+    + hardBands(pts, x, b)
     + `<path d="${path(pts, (p) => p[key], x, sy)}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
     + '</svg>';
 }
@@ -149,7 +168,7 @@ export function liveSvg(pts, { end, win = LIVE_WINDOW, width = 340, height = 150
       + `<text x="${b.left - 6}" y="${sy(v) + 4}" fill="${WATTS_COLOR}" font-size="11" text-anchor="end">${Math.round(v)}</text>`).join('')
     + [0, 16, 32].map((v) => `<text x="${b.right + 4}" y="${ry(v) + 4}" fill="${RESIST_COLOR}" font-size="11">${v}</text>`).join('')
     + ticks.map((t) => `<text x="${x(t)}" y="${height - 4}" fill="${INK}" font-size="11" text-anchor="middle">${Math.round(t / 60)} min</text>`).join('')
-    + `<g clip-path="url(#lc)"><path d="${steps}" fill="none" stroke="${RESIST_COLOR}" stroke-width="2" stroke-linejoin="round" opacity=".9"/>`
+    + `<g clip-path="url(#lc)">${hardBands(vis, x, b)}<path d="${steps}" fill="none" stroke="${RESIST_COLOR}" stroke-width="2" stroke-linejoin="round" opacity=".9"/>`
     + `<path d="${path(vis, (p) => p.watts, x, sy)}" fill="none" stroke="${WATTS_COLOR}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></g>`
     + '</svg>';
 }
@@ -171,6 +190,7 @@ export function hrSvg(pts, { maxHr, width = 340, height = 120 }) {
     + [lo, hi].map((v) => `<text x="${b.left - 6}" y="${sy(v) + 4}" fill="${INK}" font-size="11" text-anchor="end">${v}</text>`).join('')
     + zoneLines.map((v) => `<line x1="${b.left}" x2="${b.right}" y1="${sy(v)}" y2="${sy(v)}" stroke="${GRID}" stroke-width="1" stroke-dasharray="3 3"/>`).join('')
     + timeTicks(tMax).map(({ t, label }) => `<text x="${x(t)}" y="${height - 4}" fill="${INK}" font-size="11" text-anchor="${t === 0 ? 'start' : 'middle'}">${label}</text>`).join('')
+    + hardBands(pts, x, b)
     + `<path d="${path(withHr, (p) => /** @type {number} */ (p.hr), x, sy)}" fill="none" stroke="${HR_COLOR}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
     + '</svg>';
 }
