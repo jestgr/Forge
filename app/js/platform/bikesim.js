@@ -62,3 +62,46 @@ export function createBikeSim({ tickMs = 1000 } = {}) {
     },
   };
 }
+
+/**
+ * Heart-rate simulator: stand-in for the native HeartRate plugin (same methods and events). Sends standard
+ * Heart Rate Measurement packets once a (simulated) second: warms up from ~95 to ~150 bpm, then waves.
+ * @param {{ tickMs?: number }} [o]
+ */
+export function createHrSim({ tickMs = 1000 } = {}) {
+  /** @type {Record<string, Set<Function>>} */
+  const listeners = { data: new Set(), state: new Set() };
+  const emit = (/** @type {string} */ ev, /** @type {any} */ e) => listeners[ev]?.forEach((fn) => fn(e));
+  let timer = /** @type {any} */ (null);
+  let sec = 0;
+  return {
+    name: 'HR-SIM',
+    async addListener(/** @type {string} */ ev, /** @type {Function} */ fn) {
+      listeners[ev]?.add(fn);
+      return { remove: async () => { listeners[ev]?.delete(fn); } };
+    },
+    async connect() {
+      emit('state', { state: 'scanning' });
+      await new Promise((r) => setTimeout(r, Math.min(300, tickMs)));
+      emit('state', { state: 'connected', name: 'HR-SIM' });
+      if (!timer) {
+        timer = setInterval(() => {
+          sec++;
+          const bpm = Math.round(95 + 55 * Math.min(1, sec / 300) + 12 * Math.sin(sec / 40) + (Math.random() * 4 - 2));
+          emit('data', { value: [0x00, bpm] });
+        }, tickMs);
+      }
+      return { name: 'HR-SIM', address: 'SIM' };
+    },
+    async disconnect() {
+      clearInterval(timer);
+      timer = null;
+    },
+    /** Pretend the watch stopped broadcasting. */
+    drop() {
+      clearInterval(timer);
+      timer = null;
+      emit('state', { state: 'disconnected', error: 'simulated dropout' });
+    },
+  };
+}

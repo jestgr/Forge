@@ -29,6 +29,7 @@ const ASSETS = [
   './js/core/bike.js',
   './js/core/hr.js',
   './js/platform/bike.js',
+  './js/platform/hr.js',
   './js/platform/bikesim.js',
   './js/core/chart.js',
   './js/ui/ride.js',

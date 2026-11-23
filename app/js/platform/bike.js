@@ -6,6 +6,8 @@ import { keepAwake, allowSleep } from './wakelock.js';
 import { createRide, decodeEchelon, ECHELON_INIT, echelonCommand } from '../core/bike.js';
 import { createBikeSim } from './bikesim.js';
 import { state } from '../store.js';
+import { startHr, stopHr, reconnectHr, hrLink, hrAuto } from './hr.js';
+import { currentThreshold } from './healthconnect.js';
 
 export const timing = {
   /** If the bike goes quiet this long while connected, ask it to start sending again. */
@@ -63,7 +65,7 @@ export async function startRide(itemId) {
   const p = bike();
   if (!p) throw new Error('The bike connection needs the Forge Android app (or turn on Bike simulator in Settings).');
   if (current) await cancelRide();
-  const ride = /** @type {BikeRide} */ ({ itemId, status: 'scanning', ride: createRide(), startedAt: Date.now(), lastDataAt: Date.now(), sim: simOn() });
+  const ride = /** @type {BikeRide} */ ({ itemId, status: 'scanning', ride: createRide({ maxHr: maxHr() }), startedAt: Date.now(), lastDataAt: Date.now(), sim: simOn() });
   current = ride;
   keepAwake('bike');
   changed();
@@ -83,8 +85,30 @@ export async function startRide(itemId) {
     }),
   ]);
   if (current !== ride) return;
+  if (hrAuto()) heartRate(ride);
   if (!(await connectOnce(ride))) { ride.status = 'failed'; changed(); }
 }
+
+/** Max heart rate for zones: set in Settings, else the highest the watch has seen, else a default. */
+export const maxHr = () => Math.round(currentThreshold().max);
+
+/** Heart-rate readings go into the ride (they ride along with the bike's samples). */
+function heartRate(/** @type {BikeRide} */ ride) {
+  return startHr({
+    onBpm: (bpm) => { if (current === ride) { ride.ride.add({ hr: bpm ?? undefined }, Date.now()); changed(); } },
+    changed,
+  });
+}
+
+/** Connect heart rate for the ride in progress (button), or try again after it failed. */
+export async function connectHeartRate() {
+  if (!current) return;
+  if (hrLink()) await reconnectHr();
+  else await heartRate(current);
+}
+
+/** Stop heart rate for this ride (the bike keeps going). */
+export const disconnectHeartRate = () => stopHr();
 
 /** One connect attempt; on success the bike is told to start sending. */
 async function connectOnce(/** @type {BikeRide} */ ride) {
@@ -147,6 +171,7 @@ async function close() {
   watchdog = retryTimer = null;
   for (const h of handles) await h?.remove?.();
   handles = [];
+  await stopHr();
   await bike()?.disconnect().catch(() => {});
   sim = null;
   allowSleep('bike');

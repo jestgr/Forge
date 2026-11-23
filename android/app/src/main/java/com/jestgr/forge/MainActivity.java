@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
         // App-local plugins must be registered before the bridge starts.
         registerPlugin(PreflightSharePlugin.class);
         registerPlugin(EchelonBikePlugin.class);
+        registerPlugin(HeartRatePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
