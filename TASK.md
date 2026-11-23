@@ -16,7 +16,8 @@ metrics: HR zones, best efforts, live averages, work + splits.
 - [x] Live 15-min chart, drag back in time, Live button — D61.
 - [x] Tests (core + UI with simulator incl. HR dropout); screenshots in headless Chrome; `npm run check` green (130 + new asserts).
 - [x] forge-v21; CHANGELOG, DECISIONS, on-bike checklist §7 in `docs/ECHELON-TEST.md`.
-- [ ] Jeff: push + build a test APK (needs his OK), then try §7 on the bike.
+- [x] Pushed; run #14 built `debug-14` (Obtainium).
+- [ ] Jeff: install via Obtainium, then try §7 on the bike.
 
 ## Progress
 - [x] Core metrics + tests (6dc916f).
