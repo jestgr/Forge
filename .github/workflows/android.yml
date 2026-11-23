@@ -1,14 +1,19 @@
-# Builds the Forge Android app (Capacitor shell around app/) and publishes the signed APK
-# on a GitHub Release with a fixed download link:
-#   rework → https://github.com/jestgr/Forge/releases/download/android-preview/forge.apk
-#   main   → https://github.com/jestgr/Forge/releases/download/android-latest/forge.apk
-# Signing key: repo secrets ANDROID_KEYSTORE_B64 / _PASSWORD / ANDROID_KEY_ALIAS
-# (copy in /etc/homelab/secrets.yaml). The APK contains no personal data.
+# Builds the Forge Android app (Capacitor shell around app/) as a signed DEBUG APK and publishes it as a GitHub
+# pre-release "debug-<run number>" (asset forge-debug-<N>.apk). Obtainium on Jeff's phone installs and updates
+# from these releases; only the newest 3 are kept. Release files don't count against the Actions storage limit.
+#
+# Signing: every build (debug too) uses the ONE permanent Forge key, so each APK installs as an update.
+# Secrets (copy in /etc/homelab/secrets.yaml): ANDROID_KEYSTORE_BASE64 (or the older ANDROID_KEYSTORE_B64),
+# ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD (falls back to the store password: the
+# Forge keystore is PKCS12, where both are the same).
+#
+# Keep this file's name: versionCode = this workflow's run number, which must keep growing (a new workflow file
+# would start again at 1 and Android would refuse the "downgrade").
 name: Android APK
 
 on:
   push:
-    branches: [rework, main]
+    branches: [main, 'task/**', rework]
     paths:
       - 'app/**'
       - 'android/**'
@@ -28,8 +33,6 @@ concurrency:
 jobs:
   apk:
     runs-on: ubuntu-latest
-    env:
-      TAG: ${{ github.ref_name == 'main' && 'android-latest' || 'android-preview' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,47 +44,53 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm ci --no-audit --no-fund
-      - run: npm run check
+      - name: Tests
+        run: npm run check
       - run: npx cap sync android
-      - name: Build signed APK
+      - name: Decode keystore
         env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-          FORGE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          FORGE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          FORGE_VERSION_CODE: ${{ github.run_number }}
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_B64 }}
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$KEYSTORE_B64" || { echo "::error::Secret ANDROID_KEYSTORE_B64 is missing"; exit 1; }
-          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/forge.p12"
-          export FORGE_KEYSTORE_FILE="$RUNNER_TEMP/forge.p12"
+          test -n "$KEYSTORE_BASE64" || { echo "::error::Secret ANDROID_KEYSTORE_BASE64 is missing"; exit 1; }
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+      - name: Build signed debug APK
+        env:
+          SIGNING_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}
+          VERSION_CODE: ${{ github.run_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
           V=$(grep -oE "forge-v[0-9]+" app/js/version.js)
           export FORGE_VERSION_NAME="${V#forge-}.${{ github.run_number }}"
-          echo "FORGE_VERSION_NAME=$FORGE_VERSION_NAME" >> "$GITHUB_ENV"
-          (cd android && ./gradlew --no-daemon assembleRelease)
-          rm -f "$RUNNER_TEMP/forge.p12"
-          cp android/app/build/outputs/apk/release/app-release.apk forge.apk
+          (cd android && ./gradlew --no-daemon assembleDebug)
+          rm -f "$RUNNER_TEMP/release.jks"
       - name: Check signature (must be the Forge key)
         shell: bash
         run: |
           set -uo pipefail
           # Public SHA-256 of the Forge signing certificate (key in /etc/homelab/secrets.yaml).
           EXPECTED="0d94e328a6b85be558393b28bbd6ddcc4576b2a3e1027904a2bc7b4cbc23ad90"
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
           BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
-          echo "build-tools $BT"
-          OUT=$("$ANDROID_HOME/build-tools/$BT/apksigner" verify --verbose --print-certs forge.apk 2>&1); RC=$?
+          OUT=$("$ANDROID_HOME/build-tools/$BT/apksigner" verify --verbose --print-certs "$APK" 2>&1); RC=$?
           echo "$OUT" | grep -vE "^WARNING" | head -20
           [ $RC -eq 0 ] || { echo "::error::apksigner verify failed ($RC)"; exit 1; }
           echo "$OUT" | grep -qi "certificate SHA-256 digest: $EXPECTED" || { echo "::error::APK is not signed with the Forge key"; exit 1; }
           echo "Signed with the Forge key."
-      - name: Publish on GitHub Release
+      - name: Publish pre-release (keep newest 3)
         env:
           GH_TOKEN: ${{ github.token }}
+          N: ${{ github.run_number }}
         shell: bash
         run: |
           set -euo pipefail
-          gh release delete "$TAG" --cleanup-tag -y 2>/dev/null || true
-          gh release create "$TAG" forge.apk --target "$GITHUB_SHA" \
-            ${{ github.ref_name == 'main' && '--latest' || '--prerelease' }} \
-            --title "Forge Android ${FORGE_VERSION_NAME} (${{ github.ref_name }})" \
-            --notes "Built from ${{ github.ref_name }} @ ${GITHUB_SHA::7}. On the phone: download forge.apk, open it, allow installs from Chrome if asked."
+          cp android/app/build/outputs/apk/debug/app-debug.apk "forge-debug-$N.apk"
+          gh release create "debug-$N" "forge-debug-$N.apk" --prerelease --latest=false \
+            --target "$GITHUB_SHA" --title "Debug build $N" --notes "Build $N from ${GITHUB_REF_NAME} (${GITHUB_SHA::7})."
+          gh release list --limit 100 --json tagName -q '.[].tagName' | grep -E '^debug-[0-9]+$' \
+            | sort -t- -k2 -n -r | tail -n +4 | xargs -r -I{} gh release delete {} --cleanup-tag --yes

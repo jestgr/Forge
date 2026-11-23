@@ -7,8 +7,9 @@ android {
         applicationId "com.jestgr.forge"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // Set by the GitHub build (run number / app version); 1 for local builds.
-        versionCode = Integer.parseInt(System.getenv("FORGE_VERSION_CODE") ?: "1")
+        // Set by the GitHub build (run number of android.yml / app version); 1 for local builds.
+        // Must keep growing: Android (and Obtainium) only install a higher versionCode as an update.
+        versionCode = System.getenv("VERSION_CODE")?.isInteger() ? System.getenv("VERSION_CODE").toInteger() : 1
         versionName = System.getenv("FORGE_VERSION_NAME") ?: "dev"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -17,21 +18,27 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    // Release signing: key comes from GitHub secrets (copy in /etc/homelab/secrets.yaml).
+    // ONE permanent signing key for every build, debug too, so each new APK installs as an update (Obtainium).
+    // Key comes from GitHub secrets (copy in /etc/homelab/secrets.yaml). Only used when SIGNING_KEYSTORE_PATH is
+    // set, so local builds still work (with Android's own debug key).
+    def signed = System.getenv("SIGNING_KEYSTORE_PATH") as boolean
     signingConfigs {
-        release {
-            if (System.getenv("FORGE_KEYSTORE_FILE")) {
-                storeFile file(System.getenv("FORGE_KEYSTORE_FILE"))
+        forge {
+            if (signed) {
+                storeFile file(System.getenv("SIGNING_KEYSTORE_PATH"))
                 storeType "pkcs12"
-                storePassword System.getenv("FORGE_KEYSTORE_PASSWORD")
-                keyAlias System.getenv("FORGE_KEY_ALIAS")
-                keyPassword System.getenv("FORGE_KEYSTORE_PASSWORD")
+                storePassword System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword System.getenv("SIGNING_KEY_PASSWORD")
             }
         }
     }
     buildTypes {
+        debug {
+            if (signed) signingConfig signingConfigs.forge
+        }
         release {
-            if (System.getenv("FORGE_KEYSTORE_FILE")) signingConfig signingConfigs.release
+            if (signed) signingConfig signingConfigs.forge
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

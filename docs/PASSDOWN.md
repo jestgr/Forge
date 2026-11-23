@@ -3,6 +3,7 @@
 Last updated: 2026-11-23 (heart rate + metrics on branch `task/improve-bike-connection`, see TASK.md, D58–D61). Read this first when picking Forge up again; then `TASK.md`, `docs/DECISIONS.md` (D49–D57).
 
 ## Where things stand
+- **2026-11-23:** Android APKs now go to pre-releases `debug-<N>` for **Obtainium** (D62); `android-preview` / `android-latest` are no longer updated.
 - **Echelon bike connection** is built on branch `task/echelon-bike-connection` (pushed; based on `main`, not `rework`).
 - Test APK from commit `0ca081d` is on release **android-preview** and **installed on Jeff's phone (2026-11-12)**.
 - **Waiting for:** Jeff's on-bike test with `docs/ECHELON-TEST.md`. Nothing is merged; `main` / `android-latest` untouched.
